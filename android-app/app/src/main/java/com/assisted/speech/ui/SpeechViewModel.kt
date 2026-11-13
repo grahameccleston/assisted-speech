@@ -18,10 +18,20 @@ data class SpeechUiState(
     val currentMode: AppMode = AppMode.PHRASES,
     val selectedCategory: String = "Starters",
     val sentenceTokens: List<String> = emptyList(),
+    val currentTypingWord: String = "", // Partial word being typed via alphabet keys
     val categories: List<String> = listOf("Starters", "Quick Chat", "Basic Needs", "Feelings", "Requests", "Activities", "People & Places"),
     val phrases: List<PhraseItem> = emptyList(),
     val predictions: List<String> = emptyList()
-)
+) {
+    /**
+     * The full sentence to display and speak: completed tokens plus any currently typed word.
+     */
+    val displaySentence: String
+        get() {
+            val allParts = if (currentTypingWord.isNotBlank()) sentenceTokens + currentTypingWord else sentenceTokens
+            return allParts.joinToString(" ").trim()
+        }
+}
 
 class SpeechViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application, viewModelScope)
@@ -59,82 +69,111 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setMode(mode: AppMode) {
         _uiState.update { it.copy(currentMode = mode) }
-        if (mode == AppMode.PREDICTIVE) {
-            updatePredictions()
-        }
+        updatePredictions()
     }
 
     fun selectCategory(cat: String) {
         _uiState.update { it.copy(selectedCategory = cat) }
     }
 
+    /**
+     * Tapping a tile in Phrases mode commits it as a distinct word/phrase token.
+     */
     fun onPhraseSelected(phrase: PhraseItem) {
-        val newTokens = _uiState.value.sentenceTokens + phrase.text
-        
-        // Determine next category if applicable
+        // Commit any partial word first
+        val currentTokens = _uiState.value.sentenceTokens.toMutableList()
+        if (_uiState.value.currentTypingWord.isNotBlank()) {
+            currentTokens.add(_uiState.value.currentTypingWord)
+        }
+        currentTokens.add(phrase.text)
+
         val nextCategory = phrase.followUpCategory ?: _uiState.value.selectedCategory
 
-        _uiState.update { 
+        _uiState.update {
             it.copy(
-                sentenceTokens = newTokens,
+                sentenceTokens = currentTokens,
+                currentTypingWord = "",
                 selectedCategory = nextCategory
-            ) 
+            )
         }
 
         updatePredictions()
     }
 
+    /**
+     * Tapping a predicted word replaces whatever prefix was being typed with the chosen word and completes the token with space separation.
+     */
     fun onPredictWordSelected(word: String) {
         val newTokens = _uiState.value.sentenceTokens + word
-        _uiState.update { it.copy(sentenceTokens = newTokens) }
+        _uiState.update {
+            it.copy(
+                sentenceTokens = newTokens,
+                currentTypingWord = ""
+            )
+        }
         updatePredictions()
     }
 
+    /**
+     * Typing a letter appends to the current prefix and immediately updates prediction options based on preceding tokens + this prefix.
+     */
     fun onLetterTyped(letter: String) {
-        val tokens = _uiState.value.sentenceTokens.toMutableList()
-        if (tokens.isEmpty()) {
-            tokens.add(letter)
-        } else {
-            val lastIdx = tokens.size - 1
-            tokens[lastIdx] = tokens[lastIdx] + letter
-        }
-        _uiState.update { it.copy(sentenceTokens = tokens) }
+        val updatedWord = _uiState.value.currentTypingWord + letter
+        _uiState.update { it.copy(currentTypingWord = updatedWord) }
         updatePredictions()
     }
 
+    /**
+     * Commits the current typing word as a token and advances to next word.
+     */
     fun onNextWordSpace() {
-        val tokens = _uiState.value.sentenceTokens + ""
-        _uiState.update { it.copy(sentenceTokens = tokens) }
+        if (_uiState.value.currentTypingWord.isNotBlank()) {
+            val newTokens = _uiState.value.sentenceTokens + _uiState.value.currentTypingWord
+            _uiState.update {
+                it.copy(
+                    sentenceTokens = newTokens,
+                    currentTypingWord = ""
+                )
+            }
+        }
         updatePredictions()
     }
 
+    /**
+     * Backspace deletes one character of the partial word if present, otherwise removes the last full token.
+     */
     fun backspaceSentence() {
-        val tokens = _uiState.value.sentenceTokens
-        if (tokens.isNotEmpty()) {
-            _uiState.update { it.copy(sentenceTokens = tokens.dropLast(1)) }
-            updatePredictions()
+        val state = _uiState.value
+        if (state.currentTypingWord.isNotEmpty()) {
+            val shorter = state.currentTypingWord.dropLast(1)
+            _uiState.update { it.copy(currentTypingWord = shorter) }
+        } else if (state.sentenceTokens.isNotEmpty()) {
+            _uiState.update { it.copy(sentenceTokens = it.sentenceTokens.dropLast(1)) }
         }
+        updatePredictions()
     }
 
     fun clearSentence() {
-        _uiState.update { 
+        _uiState.update {
             it.copy(
                 sentenceTokens = emptyList(),
+                currentTypingWord = "",
                 selectedCategory = "Starters"
-            ) 
+            )
         }
         updatePredictions()
     }
 
     fun speakCurrentSentence() {
-        val sentence = _uiState.value.sentenceTokens.joinToString(" ").trim()
+        val sentence = _uiState.value.displaySentence
         if (sentence.isNotBlank()) {
             speechManager.speak(sentence)
         }
     }
 
     private fun updatePredictions() {
-        val preds = PredictionEngine.predictNextWords(_uiState.value.sentenceTokens)
+        val state = _uiState.value
+        val preds = PredictionEngine.predict(state.sentenceTokens, state.currentTypingWord)
         _uiState.update { it.copy(predictions = preds) }
     }
 

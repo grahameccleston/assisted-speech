@@ -58,7 +58,7 @@ fun MainScreen(viewModel: SpeechViewModel) {
         ) {
             // 1. TOP SENTENCE BAR: 2 rows to ensure text and action buttons are spacious
             SentenceAccumulatorBar(
-                sentenceTokens = uiState.sentenceTokens,
+                displayText = uiState.displaySentence,
                 onSpeak = { viewModel.speakCurrentSentence() },
                 onBackspace = { viewModel.backspaceSentence() },
                 onClear = { viewModel.clearSentence() }
@@ -107,16 +107,16 @@ fun MainScreen(viewModel: SpeechViewModel) {
 
 @Composable
 fun SentenceAccumulatorBar(
-    sentenceTokens: List<String>,
+    displayText: String,
     onSpeak: () -> Unit,
     onBackspace: () -> Unit,
     onClear: () -> Unit
 ) {
     val scrollState = rememberScrollState()
 
-    // Scroll to the end when new words are added
-    LaunchedEffect(sentenceTokens) {
-        if (sentenceTokens.isNotEmpty()) {
+    // Scroll to the end when text changes
+    LaunchedEffect(displayText) {
+        if (displayText.isNotEmpty()) {
             scrollState.animateScrollTo(scrollState.maxValue)
         }
     }
@@ -144,8 +144,8 @@ fun SentenceAccumulatorBar(
                 contentAlignment = Alignment.CenterStart
             ) {
                 Text(
-                    text = if (sentenceTokens.isEmpty()) "Tap a starter or phrase..." else sentenceTokens.joinToString(" "),
-                    color = if (sentenceTokens.isEmpty()) TextMuted else Color(0xFF38BDF8),
+                    text = if (displayText.isEmpty()) "Tap a starter or phrase..." else displayText,
+                    color = if (displayText.isEmpty()) TextMuted else Color(0xFF38BDF8),
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
