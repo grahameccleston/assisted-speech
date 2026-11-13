@@ -16,11 +16,12 @@ enum class AppMode {
 
 data class SpeechUiState(
     val currentMode: AppMode = AppMode.PHRASES,
-    val selectedCategory: String = "Starters",
+    // Tree navigation stack for Phrases Mode
+    // Empty stack means at Root (Sentence Starters & Quick Chat)
+    val navigationStack: List<PhraseTreeData.PhraseNode> = emptyList(),
     val sentenceTokens: List<String> = emptyList(),
     val currentTypingWord: String = "", // Partial word being typed via alphabet keys
-    val categories: List<String> = listOf("Starters", "Quick Chat", "Basic Needs", "Feelings", "Requests", "Activities", "People & Places"),
-    val phrases: List<PhraseItem> = emptyList(),
+    val customPhrases: List<PhraseItem> = emptyList(),
     val predictions: List<String> = emptyList()
 ) {
     /**
@@ -31,6 +32,25 @@ data class SpeechUiState(
             val allParts = if (currentTypingWord.isNotBlank()) sentenceTokens + currentTypingWord else sentenceTokens
             return allParts.joinToString(" ").trim()
         }
+
+    /**
+     * Currently displayed options in Phrases Mode based on navigation stack.
+     */
+    val currentTierNodes: List<PhraseTreeData.PhraseNode>
+        get() {
+            return if (navigationStack.isEmpty()) {
+                // Root: Show Starter Branches + Quick Socials
+                PhraseTreeData.rootTreeNodes + PhraseTreeData.quickPhrases
+            } else {
+                navigationStack.last().children
+            }
+        }
+
+    /**
+     * Breadcrumb navigation labels (e.g. ["Can you help me to", "sit up"])
+     */
+    val breadcrumbLabels: List<String>
+        get() = navigationStack.map { it.text }
 }
 
 class SpeechViewModel(application: Application) : AndroidViewModel(application) {
@@ -42,24 +62,10 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
     val uiState: StateFlow<SpeechUiState> = _uiState.asStateFlow()
 
     init {
-        // Observe categories
-        viewModelScope.launch {
-            phraseDao.getCategories().collect { cats ->
-                if (cats.isNotEmpty()) {
-                    val preferredOrder = listOf("Starters", "Quick Chat", "Basic Needs", "Feelings", "Requests", "Activities", "People & Places")
-                    val sortedCats = preferredOrder.filter { cats.contains(it) } + cats.filter { !preferredOrder.contains(it) }
-                    _uiState.update { current ->
-                        val initialCat = if (current.selectedCategory in sortedCats) current.selectedCategory else sortedCats.first()
-                        current.copy(categories = sortedCats, selectedCategory = initialCat)
-                    }
-                }
-            }
-        }
-
-        // Observe phrases
+        // Observe custom management phrases
         viewModelScope.launch {
             phraseDao.getAllPhrases().collect { list ->
-                _uiState.update { it.copy(phrases = list) }
+                _uiState.update { it.copy(customPhrases = list) }
             }
         }
 
@@ -72,32 +78,51 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
         updatePredictions()
     }
 
-    fun selectCategory(cat: String) {
-        _uiState.update { it.copy(selectedCategory = cat) }
-    }
-
     /**
-     * Tapping a tile in Phrases mode commits it as a distinct word/phrase token.
+     * Tapping a node in Phrases tree mode:
+     * - Appends the phrase node text to sentence accumulator
+     * - If node has children, navigates deeper into that branch (Tier 2, 3, etc.)
+     * - If node is a leaf (no children), resets navigation back to root
      */
-    fun onPhraseSelected(phrase: PhraseItem) {
-        // Commit any partial word first
+    fun onTreeNodeSelected(node: PhraseTreeData.PhraseNode) {
         val currentTokens = _uiState.value.sentenceTokens.toMutableList()
         if (_uiState.value.currentTypingWord.isNotBlank()) {
             currentTokens.add(_uiState.value.currentTypingWord)
         }
-        currentTokens.add(phrase.text)
+        currentTokens.add(node.text)
 
-        val nextCategory = phrase.followUpCategory ?: _uiState.value.selectedCategory
+        val nextStack = if (node.children.isNotEmpty()) {
+            _uiState.value.navigationStack + node
+        } else {
+            emptyList() // Leaf reached: return to root
+        }
 
         _uiState.update {
             it.copy(
                 sentenceTokens = currentTokens,
                 currentTypingWord = "",
-                selectedCategory = nextCategory
+                navigationStack = nextStack
             )
         }
 
         updatePredictions()
+    }
+
+    /**
+     * Navigates back one tier in the phrase tree hierarchy without deleting the accumulated sentence tokens.
+     */
+    fun onTreeNavigateUp() {
+        val currentStack = _uiState.value.navigationStack
+        if (currentStack.isNotEmpty()) {
+            _uiState.update { it.copy(navigationStack = currentStack.dropLast(1)) }
+        }
+    }
+
+    /**
+     * Resets phrase tree navigation directly to Root starters.
+     */
+    fun onTreeResetToRoot() {
+        _uiState.update { it.copy(navigationStack = emptyList()) }
     }
 
     /**
@@ -141,6 +166,7 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
 
     /**
      * Backspace deletes one character of the partial word if present, otherwise removes the last full token.
+     * Also pops one tier back if navigating.
      */
     fun backspaceSentence() {
         val state = _uiState.value
@@ -148,7 +174,14 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
             val shorter = state.currentTypingWord.dropLast(1)
             _uiState.update { it.copy(currentTypingWord = shorter) }
         } else if (state.sentenceTokens.isNotEmpty()) {
-            _uiState.update { it.copy(sentenceTokens = it.sentenceTokens.dropLast(1)) }
+            val shorterTokens = state.sentenceTokens.dropLast(1)
+            val shorterStack = if (state.navigationStack.isNotEmpty()) state.navigationStack.dropLast(1) else emptyList()
+            _uiState.update {
+                it.copy(
+                    sentenceTokens = shorterTokens,
+                    navigationStack = shorterStack
+                )
+            }
         }
         updatePredictions()
     }
@@ -158,7 +191,7 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
             it.copy(
                 sentenceTokens = emptyList(),
                 currentTypingWord = "",
-                selectedCategory = "Starters"
+                navigationStack = emptyList()
             )
         }
         updatePredictions()

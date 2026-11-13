@@ -12,89 +12,88 @@ object PredictionEngine {
         "only", "come", "its", "over", "think", "also", "back", "after", "use", "two", "how", "our", "work", "first",
         "well", "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
 
-        // Essential AAC nouns & verbs
-        "toilet", "restroom", "bathroom", "table", "telephone", "tv", "television", "tissue", "tea", "tired", "thirsty",
-        "water", "food", "medicine", "doctor", "nurse", "help", "pain", "bed", "chair", "sleep", "nap", "drink", "eat",
-        "walk", "sit", "lie", "stand", "door", "window", "lights", "blanket", "pillow", "glasses", "phone", "family",
-        "happy", "sad", "cold", "hot", "warm", "better", "dizzy", "sick", "nauseous", "uncomfortable", "hungry", "quiet",
-        "outside", "inside", "home", "hospital", "room", "kitchen", "morning", "night", "today", "tomorrow", "yesterday",
-        "please", "thank", "thanks", "hello", "goodbye", "yes", "sorry", "excuse", "again", "more", "done", "stop",
-        "open", "close", "turn", "call", "listen", "watch", "read", "music", "radio", "book", "position", "care"
+        // Essential AAC verbs & actions
+        "sit", "stand", "lie", "walk", "move", "get", "reach", "find", "open", "close", "turn", "call", "wait",
+        "eat", "drink", "sleep", "rest", "talk", "listen", "watch", "read", "wash", "brush",
+
+        // Essential AAC nouns & states
+        "toilet", "restroom", "bathroom", "table", "bed", "chair", "water", "food", "medicine", "doctor", "nurse",
+        "help", "pain", "lights", "blanket", "pillow", "glasses", "phone", "family", "door", "window", "room",
+        "happy", "sad", "cold", "hot", "warm", "better", "dizzy", "sick", "nauseous", "uncomfortable", "hungry", "thirsty",
+        "please", "thank", "thanks", "hello", "goodbye", "yes", "sorry", "excuse"
     )
 
-    // Contextual N-Gram model mapping previous word(s) -> list of most likely follow-up words
-    private val nGramMap = mapOf(
-        // Start of sentence
-        "start" to listOf("I", "Please", "Can", "Yes", "No", "Thank you", "Where", "Help"),
+    // Context pattern table matching suffix window from longest (5-gram) down to 1-gram
+    private val contextModel = mapOf(
+        // 5-gram contexts
+        "can you help me to" to listOf("sit up", "lie down", "stand up", "walk", "get up", "move", "go to", "eat", "drink"),
+        "please can you help me" to listOf("to", "with", "sit up", "lie down", "walk"),
+        "please can i go to" to listOf("the toilet", "the restroom", "the bathroom", "bed", "sleep", "the hospital"),
 
-        // Single word contexts
-        "please" to listOf("can", "help", "give", "call", "come", "turn", "open", "tell"),
-        "can" to listOf("I", "you", "we", "someone"),
-        "i" to listOf("want", "need", "feel", "am", "would", "can't", "have", "like"),
-        "go" to listOf("to", "outside", "home", "back", "away", "in"),
-        "want" to listOf("to", "some", "water", "food", "help", "my"),
-        "need" to listOf("to", "help", "some", "water", "medicine", "my", "a"),
-        "feel" to listOf("tired", "cold", "hot", "sick", "in pain", "dizzy", "better"),
-        "am" to listOf("tired", "cold", "hot", "hungry", "thirsty", "in pain", "fine"),
-        "have" to listOf("some", "a", "to", "my", "water", "food"),
-        "give" to listOf("me", "us", "him", "her"),
-        "help" to listOf("me", "us", "please", "with", "now"),
-        "turn" to listOf("on", "off", "up", "down", "around"),
-        "call" to listOf("the", "my", "a", "doctor", "nurse", "family"),
-        "open" to listOf("the", "this", "my", "door", "window"),
-        "close" to listOf("the", "this", "door", "window"),
-        "where" to listOf("is", "are", "can", "do"),
-        "what" to listOf("time", "is", "do", "happened"),
-        "how" to listOf("are", "is", "much", "long"),
-        "thank" to listOf("you", "God"),
-        "good" to listOf("morning", "night", "afternoon", "day"),
-
-        // Bigram contexts (2 preceding words)
-        "please can" to listOf("I", "you", "we"),
-        "can i" to listOf("have", "go", "get", "see", "ask", "sit"),
-        "can you" to listOf("help", "come", "turn", "open", "close", "call", "give", "repeat"),
-        "i want" to listOf("to", "water", "food", "help", "my glasses", "my phone"),
-        "i need" to listOf("to", "help", "water", "medicine", "my doctor", "a tissue"),
-        "i feel" to listOf("tired", "very", "cold", "hot", "in pain", "sick", "dizzy"),
-        "i am" to listOf("tired", "very", "feeling", "ready", "in pain", "cold", "hungry"),
-        "give me" to listOf("a", "some", "my", "the", "water", "food", "time"),
-        "help me" to listOf("to", "sit up", "lie down", "walk", "with", "stand up"),
-        "want to" to listOf("go", "have", "sleep", "eat", "drink", "watch", "listen", "see", "sit"),
-        "need to" to listOf("go", "use", "take", "see", "sleep", "rest", "call", "have"),
-        "go to" to listOf("the", "bed", "sleep", "school", "work", "hospital"),
-        "to the" to listOf("toilet", "restroom", "bathroom", "table", "bed", "kitchen", "room", "doctor", "hospital"),
-        "in the" to listOf("room", "bed", "chair", "morning", "bathroom", "kitchen"),
-        "at the" to listOf("table", "moment", "hospital", "door"),
-        "on the" to listOf("table", "bed", "lights", "tv", "television", "radio"),
-        "off the" to listOf("lights", "tv", "television", "radio"),
-        "turn on" to listOf("the", "lights", "tv", "television", "radio"),
-        "turn off" to listOf("the", "lights", "tv", "television", "radio"),
-        "where is" to listOf("the", "my", "a", "toilet", "restroom", "bathroom", "phone", "glasses", "doctor", "nurse"),
-        "what time" to listOf("is", "does", "will"),
-        "how are" to listOf("you", "things"),
-        "thank you" to listOf("very much", "so much", "for", "again"),
-
-        // Trigram contexts (3 preceding words)
-        "please can i" to listOf("have", "go", "get", "see", "ask"),
-        "can i go" to listOf("to", "outside", "home", "back"),
-        "i want to" to listOf("go", "have", "sleep", "eat", "drink", "watch", "sit"),
-        "i need to" to listOf("go", "use", "take", "see", "sleep", "rest"),
-        "i go to" to listOf("the", "bed", "sleep", "hospital"),
+        // 4-gram contexts
+        "you help me to" to listOf("sit up", "lie down", "stand up", "walk", "move", "go to", "get up"),
+        "help me to" to listOf("sit up", "lie down", "stand up", "walk", "move", "get up", "reach", "use the restroom"),
+        "can you help me" to listOf("to", "with", "sit up", "lie down", "walk", "now", "please"),
+        "please can you" to listOf("help me", "turn on", "turn off", "open", "close", "call", "come here", "give me"),
+        "please can i" to listOf("have", "go to", "get", "see", "ask"),
+        "i want to go" to listOf("to the toilet", "to the restroom", "to bed", "outside", "home", "to sleep"),
+        "i need to go" to listOf("to the toilet", "to the restroom", "to the bathroom", "to bed", "to sleep", "home"),
+        "i would like to" to listOf("go to", "have", "sit up", "lie down", "rest", "watch tv", "eat", "drink"),
         "go to the" to listOf("toilet", "restroom", "bathroom", "table", "bed", "kitchen", "doctor", "hospital"),
         "turn on the" to listOf("lights", "tv", "television", "radio", "fan"),
         "turn off the" to listOf("lights", "tv", "television", "radio", "fan"),
-        "can you help" to listOf("me", "us"),
-        "help me with" to listOf("this", "eating", "getting", "walking"),
-        "where is the" to listOf("toilet", "restroom", "bathroom", "doctor", "nurse", "phone")
+        "where is the" to listOf("toilet", "restroom", "bathroom", "doctor", "nurse", "phone", "call button"),
+        "where is my" to listOf("phone", "glasses", "medicine", "blanket", "family", "pillow"),
+
+        // 3-gram contexts (trigrams)
+        "help me" to listOf("to", "with", "sit up", "lie down", "walk", "now", "please"),
+        "me to" to listOf("sit up", "lie down", "stand up", "walk", "move", "go to", "eat", "drink"),
+        "can you" to listOf("help me", "come here", "turn on", "turn off", "open", "close", "call", "give me", "repeat"),
+        "can i" to listOf("have", "go to", "get", "see", "ask", "sit"),
+        "can i have" to listOf("water", "food", "medicine", "my glasses", "a tissue", "a drink"),
+        "i want to" to listOf("go to", "have", "sleep", "eat", "drink", "watch", "sit up", "lie down", "rest"),
+        "i need to" to listOf("go to", "use the toilet", "take my medicine", "see the doctor", "sleep", "rest", "call"),
+        "i would like" to listOf("to", "some water", "some food", "to rest"),
+        "i feel" to listOf("tired", "cold", "hot", "in pain", "sick", "dizzy", "uncomfortable", "better"),
+        "i am" to listOf("tired", "cold", "hot", "hungry", "thirsty", "in pain", "ready", "fine"),
+        "give me" to listOf("a", "some", "my", "the", "water", "food", "time", "my glasses"),
+        "turn on" to listOf("the lights", "the tv", "the television", "the radio", "the fan"),
+        "turn off" to listOf("the lights", "the tv", "the television", "the radio", "the fan"),
+        "to the" to listOf("toilet", "restroom", "bathroom", "table", "bed", "kitchen", "doctor", "hospital"),
+        "in the" to listOf("room", "bed", "chair", "morning", "bathroom", "kitchen"),
+        "on the" to listOf("table", "bed", "chair", "lights", "tv"),
+        "where is" to listOf("the toilet", "the restroom", "the bathroom", "my phone", "my glasses", "the doctor", "the nurse"),
+        "what time" to listOf("is it", "is lunch", "is dinner", "is breakfast"),
+        "thank you" to listOf("very much", "so much", "for your help", "again"),
+
+        // 2-gram contexts (bigrams)
+        "please" to listOf("can you", "can I", "help me", "give me", "call", "come", "turn on", "open"),
+        "can" to listOf("you", "I", "we", "someone"),
+        "i" to listOf("want", "need", "feel", "am", "would", "can't", "have"),
+        "to" to listOf("the", "go", "be", "have", "sit", "lie", "stand", "sleep", "eat", "drink", "walk"),
+        "the" to listOf("toilet", "restroom", "bathroom", "doctor", "nurse", "lights", "tv", "bed", "table", "door"),
+        "my" to listOf("glasses", "phone", "medicine", "blanket", "pillow", "family", "doctor"),
+        "want" to listOf("to", "water", "food", "help", "my glasses", "to rest"),
+        "need" to listOf("to", "help", "water", "medicine", "my doctor", "a tissue"),
+        "feel" to listOf("tired", "cold", "hot", "sick", "in pain", "dizzy", "better"),
+        "am" to listOf("tired", "cold", "hot", "hungry", "thirsty", "in pain", "fine"),
+        "help" to listOf("me", "us", "please", "with", "now"),
+        "turn" to listOf("on", "off", "up", "down"),
+        "call" to listOf("the doctor", "the nurse", "my family", "help"),
+        "open" to listOf("the door", "the window", "this"),
+        "close" to listOf("the door", "the window"),
+        "where" to listOf("is the", "is my", "are you"),
+        "how" to listOf("are you", "is it"),
+
+        // 1-gram / sentence start
+        "start" to listOf("I want", "I need", "Please", "Can you", "Can I", "Help me", "Where is", "Thank you")
     )
 
-    private val defaultFallbacks = listOf("toilet", "water", "help", "please", "now", "good")
+    private val defaultFallbacks = listOf("toilet", "water", "sit up", "lie down", "help", "please")
 
     /**
-     * Context-aware next word predictor:
-     * - If typing a prefix: Checks Trigram -> Bigram -> Unigram context candidates first for words starting with prefix.
-     *   Then fills remaining slots with ranked frequency-based vocabulary matching the prefix.
-     * - If not typing: Returns the most probable grammatical follow-on words from Trigram/Bigram/Unigram models.
+     * Context-aware next word predictor across the FULL context window.
+     * Searches suffix patterns starting from the longest available match (5-gram -> 4-gram -> 3-gram -> 2-gram -> 1-gram).
      */
     fun predict(sentenceTokens: List<String>, currentPrefix: String = ""): List<String> {
         val trimmedPrefix = currentPrefix.trim().lowercase()
@@ -115,29 +114,28 @@ object PredictionEngine {
 
     private fun getContextCandidates(sentenceTokens: List<String>): List<String> {
         if (sentenceTokens.isEmpty()) {
-            return nGramMap["start"] ?: defaultFallbacks
+            return contextModel["start"] ?: defaultFallbacks
         }
 
-        val len = sentenceTokens.size
-        val w1 = sentenceTokens[len - 1].trim().lowercase()
-        val w2 = if (len >= 2) "${sentenceTokens[len - 2].trim().lowercase()} $w1" else ""
-        val w3 = if (len >= 3) "${sentenceTokens[len - 3].trim().lowercase()} $w2" else ""
+        // Clean tokens: flatten any spaces within tokens (e.g. "Can you" -> ["can", "you"])
+        val words = sentenceTokens.flatMap { it.trim().lowercase().split("\\s+".toRegex()) }.filter { it.isNotBlank() }
+        if (words.isEmpty()) {
+            return contextModel["start"] ?: defaultFallbacks
+        }
 
         val candidates = mutableListOf<String>()
 
-        // 1. Check Trigram ("go to the" -> "toilet", "restroom", ...)
-        if (w3.isNotBlank() && nGramMap.containsKey(w3)) {
-            candidates.addAll(nGramMap[w3]!!)
-        }
-
-        // 2. Check Bigram ("to the" -> "toilet", "restroom", "table", ...)
-        if (w2.isNotBlank() && nGramMap.containsKey(w2)) {
-            candidates.addAll(nGramMap[w2]!!)
-        }
-
-        // 3. Check Unigram ("the" -> "toilet", "phone", ...)
-        if (nGramMap.containsKey(w1)) {
-            candidates.addAll(nGramMap[w1]!!)
+        // Check longest matching context suffix first (from 5 words down to 1 word)
+        val maxWindow = minOf(5, words.size)
+        for (windowSize in maxWindow downTo 1) {
+            val suffixKey = words.takeLast(windowSize).joinToString(" ")
+            if (contextModel.containsKey(suffixKey)) {
+                candidates.addAll(contextModel[suffixKey]!!)
+                // If we found a high-order match (3+ words), prioritize it heavily
+                if (windowSize >= 3 && candidates.size >= 4) {
+                    break
+                }
+            }
         }
 
         if (candidates.isEmpty()) {

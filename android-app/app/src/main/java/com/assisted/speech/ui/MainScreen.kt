@@ -14,10 +14,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.assisted.speech.data.PhraseItem
+import com.assisted.speech.data.PhraseTreeData
 import com.assisted.speech.data.PhraseType
 
 val BackgroundDark = Color(0xFF0F172A)
@@ -77,12 +80,13 @@ fun MainScreen(viewModel: SpeechViewModel) {
             // 3. CURRENT VIEW BODY
             Box(modifier = Modifier.weight(1f)) {
                 when (uiState.currentMode) {
-                    AppMode.PHRASES -> PhrasesModeView(
-                        categories = uiState.categories,
-                        selectedCategory = uiState.selectedCategory,
-                        phrases = uiState.phrases.filter { it.category == uiState.selectedCategory },
-                        onSelectCategory = { viewModel.selectCategory(it) },
-                        onSelectPhrase = { viewModel.onPhraseSelected(it) }
+                    AppMode.PHRASES -> HierarchicalPhrasesView(
+                        nodes = uiState.currentTierNodes,
+                        breadcrumbs = uiState.breadcrumbLabels,
+                        isAtRoot = uiState.navigationStack.isEmpty(),
+                        onNavigateUp = { viewModel.onTreeNavigateUp() },
+                        onResetToRoot = { viewModel.onTreeResetToRoot() },
+                        onSelectNode = { viewModel.onTreeNodeSelected(it) }
                     )
 
                     AppMode.PREDICTIVE -> PredictiveModeView(
@@ -93,7 +97,7 @@ fun MainScreen(viewModel: SpeechViewModel) {
                     )
 
                     AppMode.MANAGEMENT -> ManagementModeView(
-                        phrases = uiState.phrases,
+                        phrases = uiState.customPhrases,
                         onAddPhrase = { text, cat, type ->
                             viewModel.addCustomPhrase(text, cat, type)
                         },
@@ -144,7 +148,7 @@ fun SentenceAccumulatorBar(
                 contentAlignment = Alignment.CenterStart
             ) {
                 Text(
-                    text = if (displayText.isEmpty()) "Tap a starter or phrase..." else displayText,
+                    text = if (displayText.isEmpty()) "Tap a starter or word..." else displayText,
                     color = if (displayText.isEmpty()) TextMuted else Color(0xFF38BDF8),
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
@@ -234,42 +238,71 @@ fun ModeTabs(
     }
 }
 
+/**
+ * Deep multi-tier hierarchical sentence builder view with full grammatical branching.
+ */
 @Composable
-fun PhrasesModeView(
-    categories: List<String>,
-    selectedCategory: String,
-    phrases: List<PhraseItem>,
-    onSelectCategory: (String) -> Unit,
-    onSelectPhrase: (PhraseItem) -> Unit
+fun HierarchicalPhrasesView(
+    nodes: List<PhraseTreeData.PhraseNode>,
+    breadcrumbs: List<String>,
+    isAtRoot: Boolean,
+    onNavigateUp: () -> Unit,
+    onResetToRoot: () -> Unit,
+    onSelectNode: (PhraseTreeData.PhraseNode) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Categories Row
-        LazyRow(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(categories) { cat ->
-                val isSelected = selectedCategory == cat
+        // Navigation / Breadcrumb Header bar
+        if (!isAtRoot) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Button(
-                    onClick = { onSelectCategory(cat) },
-                    modifier = Modifier.height(46.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isSelected) Color(0xFF0284C7) else CardDark
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(2.dp, if (isSelected) Color(0xFF38BDF8) else BorderDark)
+                    onClick = onNavigateUp,
+                    modifier = Modifier.height(44.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text(
-                        text = cat,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isSelected) Color.White else TextMuted
-                    )
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("BACK", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
+
+                Button(
+                    onClick = onResetToRoot,
+                    modifier = Modifier.height(44.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
+                ) {
+                    Icon(Icons.Default.Home, contentDescription = "Start", modifier = Modifier.size(20.dp), tint = Color(0xFF38BDF8))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("START", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                }
+
+                Text(
+                    text = "➜ " + breadcrumbs.joinToString(" ➜ "),
+                    color = Color(0xFF93C5FD),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
+                )
             }
+        } else {
+            Text(
+                text = "CHOOSE A SENTENCE STARTER OR QUICK RESPONSE",
+                color = Color(0xFF94A3B8),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         // Large Button Phrases Grid (minimum 90dp height per target)
         LazyVerticalGrid(
@@ -278,36 +311,32 @@ fun PhrasesModeView(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(phrases) { phrase ->
+            items(nodes) { node ->
+                val hasChildren = node.children.isNotEmpty()
+                val borderColor = if (hasChildren) Color(0xFF38BDF8) else Color(0xFF4ADE80)
+
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(90.dp)
-                        .clickable { onSelectPhrase(phrase) },
+                        .height(92.dp)
+                        .clickable { onSelectNode(node) },
                     colors = CardDefaults.cardColors(containerColor = CardDark),
                     shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        2.5.dp,
-                        when (phrase.type) {
-                            PhraseType.STARTER -> Color(0xFF38BDF8)
-                            PhraseType.FRAGMENT -> Color(0xFFA855F7)
-                            PhraseType.COMPLETE -> Color(0xFF4ADE80)
-                        }
-                    )
+                    border = androidx.compose.foundation.BorderStroke(2.5.dp, borderColor)
                 ) {
                     Column(
-                        modifier = Modifier.fillMaxSize().padding(6.dp),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(text = phrase.iconEmoji, fontSize = 28.sp)
+                        Text(text = node.iconEmoji, fontSize = 28.sp)
                         Text(
-                            text = phrase.text,
+                            text = if (hasChildren) "${node.text} …" else node.text,
                             color = TextLight,
-                            fontSize = 20.sp,
+                            fontSize = 19.sp,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
-                            maxLines = 1
+                            maxLines = 2
                         )
                     }
                 }
@@ -325,7 +354,7 @@ fun PredictiveModeView(
 ) {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "PREDICTED NEXT WORDS",
+            text = "PREDICTED NEXT WORDS (FULL CONTEXT)",
             color = Color(0xFF38BDF8),
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold
@@ -338,15 +367,22 @@ fun PredictiveModeView(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(predictions.take(6)) { word ->
+            items(predictions) { word ->
                 Button(
                     onClick = { onPredictSelect(word) },
-                    modifier = Modifier.fillMaxSize().height(72.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A)),
+                    modifier = Modifier.fillMaxWidth().height(72.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D4ED8)),
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFF3B82F6))
+                    border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFF60A5FA))
                 ) {
-                    Text(text = word, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, textAlign = TextAlign.Center)
+                    Text(
+                        text = word,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2
+                    )
                 }
             }
         }
@@ -354,40 +390,61 @@ fun PredictiveModeView(
         Text(
             text = "ALPHABET / SPELLING",
             color = TextMuted,
-            fontSize = 14.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold
         )
 
-        // Alphabet Grid
-        val alphabet = ('A'..'Z').map { it.toString() }
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(7),
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        // Large 4-Row Keyboard
+        val keyboardRows = listOf(
+            listOf("A", "B", "C", "D", "E", "F", "G"),
+            listOf("H", "I", "J", "K", "L", "M", "N"),
+            listOf("O", "P", "Q", "R", "S", "T", "U"),
+            listOf("V", "W", "X", "Y", "Z")
+        )
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(alphabet) { letter ->
-                Button(
-                    onClick = { onLetterTyped(letter) },
-                    modifier = Modifier.height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = CardDark),
-                    shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark),
-                    contentPadding = PaddingValues(0.dp)
+            keyboardRows.forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(text = letter, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    row.forEach { letter ->
+                        Button(
+                            onClick = { onLetterTyped(letter) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = CardDark),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(
+                                text = letter,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextLight
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        // Space / Next Word Button
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Large Spacebar / Next Word Button
         Button(
             onClick = onSpace,
             modifier = Modifier.fillMaxWidth().height(52.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
-            shape = RoundedCornerShape(12.dp)
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(2.dp, BorderDark)
         ) {
-            Text(text = "␣ NEXT WORD / SPACE", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("␣ NEXT WORD / SPACE", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextLight)
         }
     }
 }
@@ -399,65 +456,49 @@ fun ManagementModeView(
     onDeletePhrase: (PhraseItem) -> Unit
 ) {
     var newText by remember { mutableStateOf("") }
-    var selectedCat by remember { mutableStateOf("Basic Needs") }
+    var newCategory by remember { mutableStateOf("Quick Chat") }
     var selectedType by remember { mutableStateOf(PhraseType.COMPLETE) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = CardDark),
-            shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.5.dp, BorderDark)
+            shape = RoundedCornerShape(14.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
         ) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Add New Phrase / Fragment", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("ADD NEW CUSTOM PHRASE", color = Color(0xFF38BDF8), fontSize = 15.sp, fontWeight = FontWeight.Bold)
 
                 OutlinedTextField(
                     value = newText,
                     onValueChange = { newText = it },
-                    label = { Text("Phrase or word") },
+                    label = { Text("Phrase text") },
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
+                        focusedTextColor = TextLight,
+                        unfocusedTextColor = TextLight,
                         focusedBorderColor = Color(0xFF38BDF8),
                         unfocusedBorderColor = BorderDark
                     )
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { selectedType = PhraseType.COMPLETE },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (selectedType == PhraseType.COMPLETE) AccentBlue else Color.DarkGray
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("Quick Chat", "Basic Needs", "Feelings", "Requests").forEach { cat ->
+                        FilterChip(
+                            selected = newCategory == cat,
+                            onClick = { newCategory = cat },
+                            label = { Text(cat, fontSize = 12.sp) }
                         )
-                    ) {
-                        Text("Complete")
-                    }
-
-                    Button(
-                        onClick = { selectedType = PhraseType.STARTER },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (selectedType == PhraseType.STARTER) AccentBlue else Color.DarkGray
-                        )
-                    ) {
-                        Text("Starter")
-                    }
-
-                    Button(
-                        onClick = { selectedType = PhraseType.FRAGMENT },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (selectedType == PhraseType.FRAGMENT) AccentBlue else Color.DarkGray
-                        )
-                    ) {
-                        Text("Fragment")
                     }
                 }
 
                 Button(
                     onClick = {
                         if (newText.isNotBlank()) {
-                            onAddPhrase(newText, selectedCat, selectedType)
+                            onAddPhrase(newText, newCategory, selectedType)
                             newText = ""
                         }
                     },
@@ -465,45 +506,38 @@ fun ManagementModeView(
                     colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("Add Phrase", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("+ ADD TO VOCABULARY", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Text("Saved Phrases (${phrases.size})", color = TextMuted, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-
-        Spacer(modifier = Modifier.height(6.dp))
+        Text("SAVED CUSTOM PHRASES", color = TextMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
 
         LazyColumn(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(phrases) { item ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(CardDark, RoundedCornerShape(10.dp))
-                        .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            items(phrases) { phrase ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = CardDark),
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
                 ) {
-                    Text(
-                        text = item.text,
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = "[${item.category}]",
-                        color = TextMuted,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(horizontal = 6.dp)
-                    )
-                    IconButton(onClick = { onDeletePhrase(item) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = AccentRed)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(text = phrase.text, color = TextLight, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text(text = phrase.category, color = TextMuted, fontSize = 12.sp)
+                        }
+                        IconButton(onClick = { onDeletePhrase(phrase) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = AccentRed)
+                        }
                     }
                 }
             }
