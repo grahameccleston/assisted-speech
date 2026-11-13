@@ -1,103 +1,149 @@
 package com.assisted.speech.data
 
 object PredictionEngine {
-    // Broad common vocabulary list for prefix matching
-    private val commonVocabulary = listOf(
-        "a", "about", "adjust", "after", "again", "all", "almost", "alone", "also", "always",
-        "am", "and", "another", "any", "are", "arm", "around", "as", "ask", "at", "away",
-        "back", "bad", "bath", "bathroom", "be", "because", "bed", "bedroom", "before", "better",
-        "big", "blanket", "book", "both", "bother", "bring", "brush", "busy", "but", "by",
-        "call", "can", "cannot", "can't", "care", "chair", "change", "clean", "close", "cold",
-        "come", "comfortable", "cough", "cup",
-        "day", "did", "different", "dizzy", "do", "doctor", "done", "don't", "door", "down", "drink",
-        "ear", "early", "eat", "enough", "evening", "every", "everything", "excuse", "eye",
-        "face", "family", "far", "fast", "feel", "few", "find", "fine", "first", "food", "for", "from",
-        "get", "give", "glasses", "go", "good", "goodbye", "got", "great",
-        "hand", "happy", "hard", "have", "he", "head", "hear", "hello", "help", "here", "high", "him", "his", "home", "hospital", "hot", "how", "hungry", "hurt",
-        "i", "if", "in", "is", "it", "itch", "its",
-        "just",
-        "keep", "know",
-        "later", "leave", "left", "leg", "let", "lie", "light", "lights", "like", "listen", "little", "look", "love",
-        "make", "many", "maybe", "me", "medicine", "more", "morning", "mouth", "move", "much", "music", "my",
-        "name", "nauseous", "need", "never", "new", "next", "night", "no", "not", "nothing", "now", "nurse",
-        "of", "off", "okay", "old", "on", "once", "one", "open", "or", "other", "our", "out", "outside", "over",
-        "pain", "painful", "people", "phone", "pillow", "place", "please", "position", "put",
-        "question", "quiet",
-        "read", "ready", "really", "requests", "rest", "restroom", "right", "room",
-        "sad", "same", "say", "see", "she", "should", "sick", "side", "sit", "sleep", "slow", "small", "so", "some", "someone", "something", "sometimes", "soon", "sorry", "speak", "stand", "start", "stay", "stop",
-        "take", "talk", "teeth", "tell", "television", "thank", "thanks", "that", "the", "their", "them", "then", "there", "these", "they", "thing", "think", "thirsty", "this", "time", "tired", "tissue", "to", "today", "tomorrow", "too", "turn", "tv",
-        "uncomfortable", "under", "understand", "up", "us", "use",
-        "very", "voice",
-        "wait", "walk", "want", "warm", "was", "wash", "watch", "water", "way", "we", "well", "went", "what", "when", "where", "which", "who", "why", "will", "with", "work", "would",
-        "yes", "yesterday", "you", "your", "you're"
+
+    // Ranked list of most common words in English + AAC communications (ordered by natural frequency)
+    private val rankedGeneralVocabulary = listOf(
+        // High frequency pronouns, verbs, prepositions
+        "to", "the", "and", "a", "i", "it", "not", "he", "as", "you", "this", "but", "his", "they", "her", "she",
+        "or", "an", "will", "my", "one", "all", "would", "there", "their", "what", "so", "up", "out", "if", "about",
+        "who", "get", "which", "go", "me", "when", "make", "can", "like", "time", "no", "just", "him", "know", "take",
+        "people", "into", "year", "your", "good", "some", "could", "them", "see", "other", "than", "then", "now", "look",
+        "only", "come", "its", "over", "think", "also", "back", "after", "use", "two", "how", "our", "work", "first",
+        "well", "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
+
+        // Essential AAC nouns & verbs
+        "toilet", "restroom", "bathroom", "table", "telephone", "tv", "television", "tissue", "tea", "tired", "thirsty",
+        "water", "food", "medicine", "doctor", "nurse", "help", "pain", "bed", "chair", "sleep", "nap", "drink", "eat",
+        "walk", "sit", "lie", "stand", "door", "window", "lights", "blanket", "pillow", "glasses", "phone", "family",
+        "happy", "sad", "cold", "hot", "warm", "better", "dizzy", "sick", "nauseous", "uncomfortable", "hungry", "quiet",
+        "outside", "inside", "home", "hospital", "room", "kitchen", "morning", "night", "today", "tomorrow", "yesterday",
+        "please", "thank", "thanks", "hello", "goodbye", "yes", "sorry", "excuse", "again", "more", "done", "stop",
+        "open", "close", "turn", "call", "listen", "watch", "read", "music", "radio", "book", "position", "care"
     )
 
-    // Contextual Markov / N-gram transitions (preceding word(s) -> likely next words)
+    // Contextual N-Gram model mapping previous word(s) -> list of most likely follow-up words
     private val nGramMap = mapOf(
-        "start" to listOf("I", "Yes", "No", "Please", "Can", "Help"),
-        "i" to listOf("want", "need", "feel", "am", "would", "can't", "like", "don't"),
-        "i want" to listOf("water", "food", "to rest", "to go", "help", "my glasses"),
-        "i need" to listOf("help", "water", "medicine", "the restroom", "to sleep", "a break"),
-        "i feel" to listOf("tired", "cold", "hot", "in pain", "happy", "uncomfortable"),
-        "i am" to listOf("tired", "cold", "hot", "hungry", "thirsty", "in pain", "fine"),
-        "please" to listOf("help", "give me", "call", "come", "turn", "open", "can you"),
-        "please can" to listOf("you", "I", "we"),
-        "can" to listOf("you", "I", "we", "someone", "please", "help"),
-        "can you" to listOf("help me", "come here", "open this", "turn on", "turn off", "call doctor"),
-        "can i" to listOf("have", "get", "go", "sleep", "see", "ask"),
-        "can i have" to listOf("water", "food", "medicine", "my glasses", "a tissue"),
-        "you" to listOf("help", "come", "are", "can", "know", "see"),
-        "help" to listOf("me", "please", "now", "with this", "doctor"),
-        "help me" to listOf("sit up", "lie down", "walk", "to the restroom", "please"),
+        // Start of sentence
+        "start" to listOf("I", "Please", "Can", "Yes", "No", "Thank you", "Where", "Help"),
+
+        // Single word contexts
+        "please" to listOf("can", "help", "give", "call", "come", "turn", "open", "tell"),
+        "can" to listOf("I", "you", "we", "someone"),
+        "i" to listOf("want", "need", "feel", "am", "would", "can't", "have", "like"),
+        "go" to listOf("to", "outside", "home", "back", "away", "in"),
+        "want" to listOf("to", "some", "water", "food", "help", "my"),
+        "need" to listOf("to", "help", "some", "water", "medicine", "my", "a"),
+        "feel" to listOf("tired", "cold", "hot", "sick", "in pain", "dizzy", "better"),
+        "am" to listOf("tired", "cold", "hot", "hungry", "thirsty", "in pain", "fine"),
+        "have" to listOf("some", "a", "to", "my", "water", "food"),
+        "give" to listOf("me", "us", "him", "her"),
+        "help" to listOf("me", "us", "please", "with", "now"),
         "turn" to listOf("on", "off", "up", "down", "around"),
-        "turn on" to listOf("lights", "tv", "music", "fan"),
-        "turn off" to listOf("lights", "tv", "music", "fan"),
-        "call" to listOf("the doctor", "nurse", "family", "home", "help"),
-        "where" to listOf("is", "are", "am I", "was"),
-        "where is" to listOf("my glasses", "my phone", "the doctor", "the nurse", "family")
+        "call" to listOf("the", "my", "a", "doctor", "nurse", "family"),
+        "open" to listOf("the", "this", "my", "door", "window"),
+        "close" to listOf("the", "this", "door", "window"),
+        "where" to listOf("is", "are", "can", "do"),
+        "what" to listOf("time", "is", "do", "happened"),
+        "how" to listOf("are", "is", "much", "long"),
+        "thank" to listOf("you", "God"),
+        "good" to listOf("morning", "night", "afternoon", "day"),
+
+        // Bigram contexts (2 preceding words)
+        "please can" to listOf("I", "you", "we"),
+        "can i" to listOf("have", "go", "get", "see", "ask", "sit"),
+        "can you" to listOf("help", "come", "turn", "open", "close", "call", "give", "repeat"),
+        "i want" to listOf("to", "water", "food", "help", "my glasses", "my phone"),
+        "i need" to listOf("to", "help", "water", "medicine", "my doctor", "a tissue"),
+        "i feel" to listOf("tired", "very", "cold", "hot", "in pain", "sick", "dizzy"),
+        "i am" to listOf("tired", "very", "feeling", "ready", "in pain", "cold", "hungry"),
+        "give me" to listOf("a", "some", "my", "the", "water", "food", "time"),
+        "help me" to listOf("to", "sit up", "lie down", "walk", "with", "stand up"),
+        "want to" to listOf("go", "have", "sleep", "eat", "drink", "watch", "listen", "see", "sit"),
+        "need to" to listOf("go", "use", "take", "see", "sleep", "rest", "call", "have"),
+        "go to" to listOf("the", "bed", "sleep", "school", "work", "hospital"),
+        "to the" to listOf("toilet", "restroom", "bathroom", "table", "bed", "kitchen", "room", "doctor", "hospital"),
+        "in the" to listOf("room", "bed", "chair", "morning", "bathroom", "kitchen"),
+        "at the" to listOf("table", "moment", "hospital", "door"),
+        "on the" to listOf("table", "bed", "lights", "tv", "television", "radio"),
+        "off the" to listOf("lights", "tv", "television", "radio"),
+        "turn on" to listOf("the", "lights", "tv", "television", "radio"),
+        "turn off" to listOf("the", "lights", "tv", "television", "radio"),
+        "where is" to listOf("the", "my", "a", "toilet", "restroom", "bathroom", "phone", "glasses", "doctor", "nurse"),
+        "what time" to listOf("is", "does", "will"),
+        "how are" to listOf("you", "things"),
+        "thank you" to listOf("very much", "so much", "for", "again"),
+
+        // Trigram contexts (3 preceding words)
+        "please can i" to listOf("have", "go", "get", "see", "ask"),
+        "can i go" to listOf("to", "outside", "home", "back"),
+        "i want to" to listOf("go", "have", "sleep", "eat", "drink", "watch", "sit"),
+        "i need to" to listOf("go", "use", "take", "see", "sleep", "rest"),
+        "i go to" to listOf("the", "bed", "sleep", "hospital"),
+        "go to the" to listOf("toilet", "restroom", "bathroom", "table", "bed", "kitchen", "doctor", "hospital"),
+        "turn on the" to listOf("lights", "tv", "television", "radio", "fan"),
+        "turn off the" to listOf("lights", "tv", "television", "radio", "fan"),
+        "can you help" to listOf("me", "us"),
+        "help me with" to listOf("this", "eating", "getting", "walking"),
+        "where is the" to listOf("toilet", "restroom", "bathroom", "doctor", "nurse", "phone")
     )
 
-    private val defaultFallbacks = listOf("please", "now", "more", "thank you", "help", "good")
+    private val defaultFallbacks = listOf("toilet", "water", "help", "please", "now", "good")
 
     /**
-     * Predicts next words considering:
-     * 1. If user is currently typing a partial word (`currentPrefix`), filter and rank words starting with that prefix.
-     * 2. If no partial word is being typed, use the preceding words (bigram/trigram context).
+     * Context-aware next word predictor:
+     * - If typing a prefix: Checks Trigram -> Bigram -> Unigram context candidates first for words starting with prefix.
+     *   Then fills remaining slots with ranked frequency-based vocabulary matching the prefix.
+     * - If not typing: Returns the most probable grammatical follow-on words from Trigram/Bigram/Unigram models.
      */
     fun predict(sentenceTokens: List<String>, currentPrefix: String = ""): List<String> {
         val trimmedPrefix = currentPrefix.trim().lowercase()
 
         if (trimmedPrefix.isNotEmpty()) {
-            // Contextual candidates matching the prefix first
-            val contextCandidates = getNextWordCandidates(sentenceTokens)
-            val matchedFromContext = contextCandidates.filter { it.lowercase().startsWith(trimmedPrefix) }
+            val matchedFromContext = getContextCandidates(sentenceTokens)
+                .filter { it.lowercase().startsWith(trimmedPrefix) }
 
-            // General vocabulary matching the prefix
-            val matchedFromVocab = commonVocabulary.filter { it.startsWith(trimmedPrefix) }
+            val matchedFromVocab = rankedGeneralVocabulary
+                .filter { it.startsWith(trimmedPrefix) }
 
-            val combined = (matchedFromContext + matchedFromVocab).distinct()
-            return if (combined.isNotEmpty()) combined.take(6) else defaultFallbacks
+            val results = (matchedFromContext + matchedFromVocab).distinct()
+            return if (results.isNotEmpty()) results.take(6) else defaultFallbacks
         }
 
-        return getNextWordCandidates(sentenceTokens).take(6)
+        return getContextCandidates(sentenceTokens).take(6)
     }
 
-    private fun getNextWordCandidates(sentenceTokens: List<String>): List<String> {
+    private fun getContextCandidates(sentenceTokens: List<String>): List<String> {
         if (sentenceTokens.isEmpty()) {
             return nGramMap["start"] ?: defaultFallbacks
         }
 
         val len = sentenceTokens.size
-        val last1 = sentenceTokens[len - 1].trim().lowercase()
-        val last2 = if (len >= 2) "${sentenceTokens[len - 2].trim().lowercase()} $last1" else ""
+        val w1 = sentenceTokens[len - 1].trim().lowercase()
+        val w2 = if (len >= 2) "${sentenceTokens[len - 2].trim().lowercase()} $w1" else ""
+        val w3 = if (len >= 3) "${sentenceTokens[len - 3].trim().lowercase()} $w2" else ""
 
-        if (last2.isNotBlank() && nGramMap.containsKey(last2)) {
-            return nGramMap[last2]!!
-        }
-        if (nGramMap.containsKey(last1)) {
-            return nGramMap[last1]!!
+        val candidates = mutableListOf<String>()
+
+        // 1. Check Trigram ("go to the" -> "toilet", "restroom", ...)
+        if (w3.isNotBlank() && nGramMap.containsKey(w3)) {
+            candidates.addAll(nGramMap[w3]!!)
         }
 
-        return defaultFallbacks
+        // 2. Check Bigram ("to the" -> "toilet", "restroom", "table", ...)
+        if (w2.isNotBlank() && nGramMap.containsKey(w2)) {
+            candidates.addAll(nGramMap[w2]!!)
+        }
+
+        // 3. Check Unigram ("the" -> "toilet", "phone", ...)
+        if (nGramMap.containsKey(w1)) {
+            candidates.addAll(nGramMap[w1]!!)
+        }
+
+        if (candidates.isEmpty()) {
+            candidates.addAll(defaultFallbacks)
+        }
+
+        return candidates.distinct()
     }
 }
