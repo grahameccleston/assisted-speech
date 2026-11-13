@@ -50,6 +50,8 @@ data class MotorAccessSettings(
     val speakerGender: SpeakerGender = SpeakerGender.NEUTRAL,
     val formality: Formality = Formality.POLITE,
     val speechRate: Float = 0.85f,
+    val speechPitch: Float = 1.0f,
+    val selectedVoiceId: String? = null,
     val autoScanEnabled: Boolean = false,
     val scanIntervalMs: Long = 2200L
 )

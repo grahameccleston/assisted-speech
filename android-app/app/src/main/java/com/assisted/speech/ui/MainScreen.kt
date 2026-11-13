@@ -138,7 +138,10 @@ fun MainScreen(viewModel: SpeechViewModel) {
                         uiState = uiState,
                         onSwitchLanguage = { viewModel.switchLanguage(it) },
                         onLaunchTtsInstaller = { viewModel.launchTtsInstaller() },
-                        onUpdateMotorSettings = { viewModel.updateMotorSettings(it) },
+                        onPreviewVoice = { viewModel.previewVoice() },
+                        onUpdateMotorSettings = { settings, preview ->
+                            viewModel.updateMotorSettings(settings, preview)
+                        },
                         onAddCustomNode = { text, parentId, emoji, pinned ->
                             viewModel.addCustomPhraseNode(text, parentId, emoji, pinned)
                         },
@@ -1085,7 +1088,8 @@ fun CaregiverManagementView(
     uiState: SpeechUiState,
     onSwitchLanguage: (String) -> Unit,
     onLaunchTtsInstaller: () -> Unit,
-    onUpdateMotorSettings: (MotorAccessSettings) -> Unit,
+    onPreviewVoice: () -> Unit,
+    onUpdateMotorSettings: (MotorAccessSettings, Boolean) -> Unit,
     onAddCustomNode: (String, String?, String, Boolean) -> Unit,
     onTogglePin: (PhraseNodeEntity) -> Unit,
     onDeleteNode: (PhraseNodeEntity) -> Unit,
@@ -1149,23 +1153,88 @@ fun CaregiverManagementView(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (uiState.isTtsVoiceReady) "✅ Offline TTS Voice Ready" else "⚠️ Offline Voice Missing for ${uiState.locale.uppercase()}",
+                            text = if (uiState.isTtsVoiceReady) "✅ TTS Engine Ready (${uiState.availableVoices.size} voices)" else "⚠️ Offline Voice Missing for ${uiState.locale.uppercase()}",
                             color = if (uiState.isTtsVoiceReady) Color(0xFF4ADE80) else AccentGold,
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
                         )
+                        Button(
+                            onClick = onPreviewVoice,
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                        ) {
+                            Text("🔊 Test Voice", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
                         OutlinedButton(onClick = onLaunchTtsInstaller) {
-                            Text("📥 Offline TTS Voices", color = TextLight, fontSize = 12.sp)
+                            Text("📥 Voices", color = TextLight, fontSize = 12.sp)
                         }
                     }
 
-                    Text("Speaker Grammatical Gender (for gendered languages like ES / FR):", color = TextMuted, fontSize = 13.sp)
+                    Text("Speaker Voice & Grammatical Gender (Auto-Selects Male/Female Voice + Grammar):", color = TextMuted, fontSize = 13.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SpeakerGender.entries.forEach { g ->
                             FilterChip(
                                 selected = settings.speakerGender == g,
-                                onClick = { onUpdateMotorSettings(settings.copy(speakerGender = g)) },
-                                label = { Text(g.label) }
+                                onClick = {
+                                    // Reset explicit voice override so engine automatically picks matching Male/Female voice & plays preview
+                                    onUpdateMotorSettings(
+                                        settings.copy(speakerGender = g, selectedVoiceId = null),
+                                        true
+                                    )
+                                },
+                                label = { Text(g.label, fontWeight = FontWeight.Bold) }
+                            )
+                        }
+                    }
+
+                    if (uiState.availableVoices.isNotEmpty()) {
+                        Text("Installed Device Voices (Tap any voice to switch & preview):", color = TextMuted, fontSize = 13.sp)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item {
+                                FilterChip(
+                                    selected = settings.selectedVoiceId == null,
+                                    onClick = {
+                                        onUpdateMotorSettings(settings.copy(selectedVoiceId = null), true)
+                                    },
+                                    label = { Text("✨ Auto (${settings.speakerGender.label})") }
+                                )
+                            }
+                            items(uiState.availableVoices, key = { it.id }) { voiceOpt ->
+                                FilterChip(
+                                    selected = settings.selectedVoiceId == voiceOpt.id ||
+                                        (settings.selectedVoiceId == null && uiState.activeVoiceId == voiceOpt.id),
+                                    onClick = {
+                                        onUpdateMotorSettings(
+                                            settings.copy(
+                                                selectedVoiceId = voiceOpt.id,
+                                                speakerGender = if (voiceOpt.detectedGender != SpeakerGender.NEUTRAL) voiceOpt.detectedGender else settings.speakerGender
+                                            ),
+                                            true
+                                        )
+                                    },
+                                    label = { Text(voiceOpt.label) }
+                                )
+                            }
+                        }
+                    }
+
+                    Text("Voice Pitch / Tone Depth (Works on all devices even with 1 voice file):", color = TextMuted, fontSize = 13.sp)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(
+                            listOf(
+                                0.72f to "Deep Male (0.72x)",
+                                0.85f to "Low (0.85x)",
+                                1.0f to "Normal (1.0x)",
+                                1.15f to "Higher (1.15x)"
+                            )
+                        ) { (pitchVal, label) ->
+                            FilterChip(
+                                selected = kotlin.math.abs(settings.speechPitch - pitchVal) < 0.05f,
+                                onClick = {
+                                    onUpdateMotorSettings(settings.copy(speechPitch = pitchVal), true)
+                                },
+                                label = { Text(label) }
                             )
                         }
                     }
@@ -1175,7 +1244,7 @@ fun CaregiverManagementView(
                         Formality.entries.forEach { f ->
                             FilterChip(
                                 selected = settings.formality == f,
-                                onClick = { onUpdateMotorSettings(settings.copy(formality = f)) },
+                                onClick = { onUpdateMotorSettings(settings.copy(formality = f), false) },
                                 label = { Text(f.label) }
                             )
                         }
@@ -1186,7 +1255,7 @@ fun CaregiverManagementView(
                         listOf(0.70f to "Slow (0.7x)", 0.85f to "Clear (0.85x)", 1.05f to "Natural (1.05x)").forEach { (rate, label) ->
                             FilterChip(
                                 selected = kotlin.math.abs(settings.speechRate - rate) < 0.05f,
-                                onClick = { onUpdateMotorSettings(settings.copy(speechRate = rate)) },
+                                onClick = { onUpdateMotorSettings(settings.copy(speechRate = rate), true) },
                                 label = { Text(label) }
                             )
                         }
@@ -1219,7 +1288,7 @@ fun CaregiverManagementView(
                         Handedness.entries.forEach { hand ->
                             FilterChip(
                                 selected = settings.handedness == hand,
-                                onClick = { onUpdateMotorSettings(settings.copy(handedness = hand)) },
+                                onClick = { onUpdateMotorSettings(settings.copy(handedness = hand), false) },
                                 label = { Text(hand.label) }
                             )
                         }
@@ -1230,7 +1299,7 @@ fun CaregiverManagementView(
                         listOf(150L to "Light (150ms)", 350L to "Medium (350ms)", 650L to "Strong (650ms)").forEach { (ms, label) ->
                             FilterChip(
                                 selected = settings.debounceMs == ms,
-                                onClick = { onUpdateMotorSettings(settings.copy(debounceMs = ms)) },
+                                onClick = { onUpdateMotorSettings(settings.copy(debounceMs = ms), false) },
                                 label = { Text(label) }
                             )
                         }
@@ -1241,7 +1310,7 @@ fun CaregiverManagementView(
                         listOf(0L to "Instant (0ms)", 70L to "Standard (70ms)", 180L to "Firm Hold (180ms)").forEach { (ms, label) ->
                             FilterChip(
                                 selected = settings.minHoldMs == ms,
-                                onClick = { onUpdateMotorSettings(settings.copy(minHoldMs = ms)) },
+                                onClick = { onUpdateMotorSettings(settings.copy(minHoldMs = ms), false) },
                                 label = { Text(label) }
                             )
                         }
@@ -1255,7 +1324,7 @@ fun CaregiverManagementView(
                         Text("Auto-Speak Complete Phrases on 1 Tap", color = TextLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         Switch(
                             checked = settings.autoSpeakComplete,
-                            onCheckedChange = { onUpdateMotorSettings(settings.copy(autoSpeakComplete = it)) }
+                            onCheckedChange = { onUpdateMotorSettings(settings.copy(autoSpeakComplete = it), false) }
                         )
                     }
 
@@ -1272,7 +1341,7 @@ fun CaregiverManagementView(
                         }
                         Switch(
                             checked = settings.autoScanEnabled,
-                            onCheckedChange = { onUpdateMotorSettings(settings.copy(autoScanEnabled = it)) }
+                            onCheckedChange = { onUpdateMotorSettings(settings.copy(autoScanEnabled = it), false) }
                         )
                     }
 
@@ -1282,7 +1351,7 @@ fun CaregiverManagementView(
                             listOf(1500L to "Fast (1.5s)", 2200L to "Medium (2.2s)", 3200L to "Slow (3.2s)").forEach { (ms, label) ->
                                 FilterChip(
                                     selected = settings.scanIntervalMs == ms,
-                                    onClick = { onUpdateMotorSettings(settings.copy(scanIntervalMs = ms)) },
+                                    onClick = { onUpdateMotorSettings(settings.copy(scanIntervalMs = ms), false) },
                                     label = { Text(label) }
                                 )
                             }

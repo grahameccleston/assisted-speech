@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.assisted.speech.data.*
 import com.assisted.speech.tts.SpeechManager
+import com.assisted.speech.tts.TtsVoiceOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -18,6 +19,8 @@ data class SpeechUiState(
     val availableLocales: List<Pair<String, String>> = listOf("en" to "English"),
     val languageMetadata: LanguageMetadata = LanguageMetadata(),
     val isTtsVoiceReady: Boolean = true,
+    val availableVoices: List<TtsVoiceOption> = emptyList(),
+    val activeVoiceId: String? = null,
     val motorSettings: MotorAccessSettings = MotorAccessSettings(),
     val isCaregiverUnlocked: Boolean = false,
     val isSpellingOpen: Boolean = false,
@@ -145,13 +148,25 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
     )
     val uiState: StateFlow<SpeechUiState> = _uiState.asStateFlow()
 
-    private val speechManager = SpeechManager(appContext) { isVoiceReady ->
-        _uiState.update { it.copy(isTtsVoiceReady = isVoiceReady) }
+    private val speechManager = SpeechManager(appContext) { isVoiceReady, voices, activeVoice ->
+        _uiState.update {
+            it.copy(
+                isTtsVoiceReady = isVoiceReady,
+                availableVoices = voices,
+                activeVoiceId = activeVoice
+            )
+        }
     }
 
     init {
-        speechManager.setLocale(currentLanguagePack.metadata.locale)
-        speechManager.setRate(_uiState.value.motorSettings.speechRate)
+        val initSettings = _uiState.value.motorSettings
+        speechManager.configureVoice(
+            localeTag = currentLanguagePack.metadata.locale,
+            gender = initSettings.speakerGender,
+            specificVoiceId = initSettings.selectedVoiceId,
+            rate = initSettings.speechRate,
+            pitch = initSettings.speechPitch
+        )
 
         // Reactively observe the active locale's nodes, utterance history, and learned N-grams
         viewModelScope.launch {
@@ -176,7 +191,15 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
         if (localeCode == _uiState.value.locale) return
         prefs.edit().putString("active_locale", localeCode).apply()
         currentLanguagePack = LanguagePackLoader.load(appContext, localeCode)
-        speechManager.setLocale(localeCode)
+        val resetVoiceSettings = _uiState.value.motorSettings.copy(selectedVoiceId = null)
+        prefs.edit().remove("selected_voice_id").apply()
+        speechManager.configureVoice(
+            localeTag = localeCode,
+            gender = resetVoiceSettings.speakerGender,
+            specificVoiceId = null,
+            rate = resetVoiceSettings.speechRate,
+            pitch = resetVoiceSettings.speechPitch
+        )
 
         viewModelScope.launch(Dispatchers.IO) {
             AppDatabase.seedLocaleIfNeeded(appContext, phraseDao, localeCode)
@@ -187,6 +210,7 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
             it.copy(
                 locale = localeCode,
                 languageMetadata = currentLanguagePack.metadata,
+                motorSettings = resetVoiceSettings,
                 navigationStack = emptyList(),
                 sentenceTokens = emptyList(),
                 selectedConceptIds = emptyList(),
@@ -200,6 +224,15 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
 
     fun launchTtsInstaller() {
         speechManager.launchVoiceDataInstaller(appContext)
+    }
+
+    fun previewVoice() {
+        val sample = when (_uiState.value.locale) {
+            "es" -> "Hola, esta es mi voz"
+            "fr" -> "Bonjour, voici ma voix"
+            else -> "Hello, this is my voice"
+        }
+        speechManager.speak(sample)
     }
 
     private fun loadMotorSettings(): MotorAccessSettings {
@@ -222,6 +255,8 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
             Formality.POLITE
         }
         val rate = prefs.getFloat("speech_rate", 0.85f)
+        val pitch = prefs.getFloat("speech_pitch", 1.0f)
+        val voiceId = prefs.getString("selected_voice_id", null)
         val autoScan = prefs.getBoolean("auto_scan", false)
         val scanInterval = prefs.getLong("scan_interval_ms", 2200L)
 
@@ -233,12 +268,14 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
             speakerGender = gender,
             formality = formality,
             speechRate = rate,
+            speechPitch = pitch,
+            selectedVoiceId = voiceId,
             autoScanEnabled = autoScan,
             scanIntervalMs = scanInterval
         )
     }
 
-    fun updateMotorSettings(newSettings: MotorAccessSettings) {
+    fun updateMotorSettings(newSettings: MotorAccessSettings, playVoiceSample: Boolean = false) {
         prefs.edit()
             .putLong("debounce_ms", newSettings.debounceMs)
             .putLong("min_hold_ms", newSettings.minHoldMs)
@@ -247,13 +284,25 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
             .putString("speaker_gender", newSettings.speakerGender.name)
             .putString("formality", newSettings.formality.name)
             .putFloat("speech_rate", newSettings.speechRate)
+            .putFloat("speech_pitch", newSettings.speechPitch)
+            .putString("selected_voice_id", newSettings.selectedVoiceId)
             .putBoolean("auto_scan", newSettings.autoScanEnabled)
             .putLong("scan_interval_ms", newSettings.scanIntervalMs)
             .apply()
 
-        speechManager.setRate(newSettings.speechRate)
+        speechManager.configureVoice(
+            localeTag = _uiState.value.locale,
+            gender = newSettings.speakerGender,
+            specificVoiceId = newSettings.selectedVoiceId,
+            rate = newSettings.speechRate,
+            pitch = newSettings.speechPitch
+        )
         _uiState.update { it.copy(motorSettings = newSettings, scanFocusIndex = 0) }
         recomputeAdaptiveState()
+
+        if (playVoiceSample) {
+            previewVoice()
+        }
     }
 
     fun toggleCaregiverMode() {
