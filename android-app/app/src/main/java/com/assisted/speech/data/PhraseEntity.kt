@@ -33,6 +33,9 @@ interface PhraseDao {
     @Query("SELECT DISTINCT category FROM phrases")
     fun getCategories(): Flow<List<String>>
 
+    @Query("SELECT COUNT(*) FROM phrases")
+    suspend fun getCount(): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPhrase(phrase: PhraseItem): Long
 

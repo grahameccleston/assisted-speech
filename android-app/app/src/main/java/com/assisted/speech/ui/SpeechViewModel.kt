@@ -18,7 +18,7 @@ data class SpeechUiState(
     val currentMode: AppMode = AppMode.PHRASES,
     val selectedCategory: String = "Starters",
     val sentenceTokens: List<String> = emptyList(),
-    val categories: List<String> = listOf("Starters", "Basic Needs", "Feelings", "Requests", "Quick"),
+    val categories: List<String> = listOf("Starters", "Quick Chat", "Basic Needs", "Feelings", "Requests", "Activities", "People & Places"),
     val phrases: List<PhraseItem> = emptyList(),
     val predictions: List<String> = emptyList()
 )
@@ -36,8 +36,8 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             phraseDao.getCategories().collect { cats ->
                 if (cats.isNotEmpty()) {
-                    val order = listOf("Starters", "Basic Needs", "Feelings", "Requests", "Quick")
-                    val sortedCats = order.filter { cats.contains(it) } + cats.filter { !order.contains(it) }
+                    val preferredOrder = listOf("Starters", "Quick Chat", "Basic Needs", "Feelings", "Requests", "Activities", "People & Places")
+                    val sortedCats = preferredOrder.filter { cats.contains(it) } + cats.filter { !preferredOrder.contains(it) }
                     _uiState.update { current ->
                         val initialCat = if (current.selectedCategory in sortedCats) current.selectedCategory else sortedCats.first()
                         current.copy(categories = sortedCats, selectedCategory = initialCat)
