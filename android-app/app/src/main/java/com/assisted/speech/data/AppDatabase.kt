@@ -4,12 +4,19 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [PhraseItem::class], version = 3, exportSchema = false)
+@Database(
+    entities = [
+        PhraseNodeEntity::class,
+        UtteranceLogEntity::class,
+        UserNgramEntity::class
+    ],
+    version = 5,
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun phraseDao(): PhraseDao
 
@@ -19,23 +26,21 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {
+                val appContext = context.applicationContext
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
+                    appContext,
                     AppDatabase::class.java,
                     "assisted_speech_db"
                 )
                     .fallbackToDestructiveMigration()
-                    .addCallback(DatabaseCallback(scope))
                     .build()
                 INSTANCE = instance
 
-                // Also ensure data is seeded if database exists but table is empty
+                // Seed all available language packs ("en", "es", "fr", etc.) into Room
                 scope.launch(Dispatchers.IO) {
-                    val count = instance.phraseDao().getCount()
-                    if (count == 0) {
-                        InitialPhrases.getSeeds().forEach {
-                            instance.phraseDao().insertPhrase(it)
-                        }
+                    val locales = LanguagePackLoader.getAvailableLocales(appContext)
+                    locales.forEach { (code, _) ->
+                        seedLocaleIfNeeded(appContext, instance.phraseDao(), code)
                     }
                 }
 
@@ -43,19 +48,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        private class DatabaseCallback(
-            private val scope: CoroutineScope
-        ) : RoomDatabase.Callback() {
-            override fun onCreate(db: SupportSQLiteDatabase) {
-                super.onCreate(db)
-                INSTANCE?.let { database ->
-                    scope.launch(Dispatchers.IO) {
-                        InitialPhrases.getSeeds().forEach {
-                            database.phraseDao().insertPhrase(it)
-                        }
-                    }
-                }
-            }
+        suspend fun seedLocaleIfNeeded(
+            context: Context,
+            dao: PhraseDao,
+            locale: String
+        ) {
+            val pack = LanguagePackLoader.load(context, locale)
+            dao.insertNodesIgnore(pack.concepts)
         }
     }
 }

@@ -1,147 +1,489 @@
 package com.assisted.speech.data
 
+import kotlin.math.exp
+import kotlin.math.ln
+
+data class SmartShortcut(
+    val id: String,
+    val fullText: String,
+    val iconEmoji: String,
+    val badgeLabel: String,
+    val conceptPath: List<String>
+)
+
+data class LetterHighlight(
+    val letter: String,
+    val isPossible: Boolean,
+    val isTopLikely: Boolean
+)
+
 object PredictionEngine {
 
-    // Ranked list of most common words in English + AAC communications (ordered by natural frequency)
-    private val rankedGeneralVocabulary = listOf(
-        // High frequency pronouns, verbs, prepositions
-        "to", "the", "and", "a", "i", "it", "not", "he", "as", "you", "this", "but", "his", "they", "her", "she",
-        "or", "an", "will", "my", "one", "all", "would", "there", "their", "what", "so", "up", "out", "if", "about",
-        "who", "get", "which", "go", "me", "when", "make", "can", "like", "time", "no", "just", "him", "know", "take",
-        "people", "into", "year", "your", "good", "some", "could", "them", "see", "other", "than", "then", "now", "look",
-        "only", "come", "its", "over", "think", "also", "back", "after", "use", "two", "how", "our", "work", "first",
-        "well", "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
-
-        // Essential AAC verbs & actions
-        "sit", "stand", "lie", "walk", "move", "get", "reach", "find", "open", "close", "turn", "call", "wait",
-        "eat", "drink", "sleep", "rest", "talk", "listen", "watch", "read", "wash", "brush",
-
-        // Essential AAC nouns & states
-        "toilet", "restroom", "bathroom", "table", "bed", "chair", "water", "food", "medicine", "doctor", "nurse",
-        "help", "pain", "lights", "blanket", "pillow", "glasses", "phone", "family", "door", "window", "room",
-        "happy", "sad", "cold", "hot", "warm", "better", "dizzy", "sick", "nauseous", "uncomfortable", "hungry", "thirsty",
-        "please", "thank", "thanks", "hello", "goodbye", "yes", "sorry", "excuse"
-    )
-
-    // Context pattern table matching suffix window from longest (5-gram) down to 1-gram
-    private val contextModel = mapOf(
-        // 5-gram contexts
-        "can you help me to" to listOf("sit up", "lie down", "stand up", "walk", "get up", "move", "go to", "eat", "drink"),
-        "please can you help me" to listOf("to", "with", "sit up", "lie down", "walk"),
-        "please can i go to" to listOf("the toilet", "the restroom", "the bathroom", "bed", "sleep", "the hospital"),
-
-        // 4-gram contexts
-        "you help me to" to listOf("sit up", "lie down", "stand up", "walk", "move", "go to", "get up"),
-        "help me to" to listOf("sit up", "lie down", "stand up", "walk", "move", "get up", "reach", "use the restroom"),
-        "can you help me" to listOf("to", "with", "sit up", "lie down", "walk", "now", "please"),
-        "please can you" to listOf("help me", "turn on", "turn off", "open", "close", "call", "come here", "give me"),
-        "please can i" to listOf("have", "go to", "get", "see", "ask"),
-        "i want to go" to listOf("to the toilet", "to the restroom", "to bed", "outside", "home", "to sleep"),
-        "i need to go" to listOf("to the toilet", "to the restroom", "to the bathroom", "to bed", "to sleep", "home"),
-        "i would like to" to listOf("go to", "have", "sit up", "lie down", "rest", "watch tv", "eat", "drink"),
-        "go to the" to listOf("toilet", "restroom", "bathroom", "table", "bed", "kitchen", "doctor", "hospital"),
-        "turn on the" to listOf("lights", "tv", "television", "radio", "fan"),
-        "turn off the" to listOf("lights", "tv", "television", "radio", "fan"),
-        "where is the" to listOf("toilet", "restroom", "bathroom", "doctor", "nurse", "phone", "call button"),
-        "where is my" to listOf("phone", "glasses", "medicine", "blanket", "family", "pillow"),
-
-        // 3-gram contexts (trigrams)
-        "help me" to listOf("to", "with", "sit up", "lie down", "walk", "now", "please"),
-        "me to" to listOf("sit up", "lie down", "stand up", "walk", "move", "go to", "eat", "drink"),
-        "can you" to listOf("help me", "come here", "turn on", "turn off", "open", "close", "call", "give me", "repeat"),
-        "can i" to listOf("have", "go to", "get", "see", "ask", "sit"),
-        "can i have" to listOf("water", "food", "medicine", "my glasses", "a tissue", "a drink"),
-        "i want to" to listOf("go to", "have", "sleep", "eat", "drink", "watch", "sit up", "lie down", "rest"),
-        "i need to" to listOf("go to", "use the toilet", "take my medicine", "see the doctor", "sleep", "rest", "call"),
-        "i would like" to listOf("to", "some water", "some food", "to rest"),
-        "i feel" to listOf("tired", "cold", "hot", "in pain", "sick", "dizzy", "uncomfortable", "better"),
-        "i am" to listOf("tired", "cold", "hot", "hungry", "thirsty", "in pain", "ready", "fine"),
-        "give me" to listOf("a", "some", "my", "the", "water", "food", "time", "my glasses"),
-        "turn on" to listOf("the lights", "the tv", "the television", "the radio", "the fan"),
-        "turn off" to listOf("the lights", "the tv", "the television", "the radio", "the fan"),
-        "to the" to listOf("toilet", "restroom", "bathroom", "table", "bed", "kitchen", "doctor", "hospital"),
-        "in the" to listOf("room", "bed", "chair", "morning", "bathroom", "kitchen"),
-        "on the" to listOf("table", "bed", "chair", "lights", "tv"),
-        "where is" to listOf("the toilet", "the restroom", "the bathroom", "my phone", "my glasses", "the doctor", "the nurse"),
-        "what time" to listOf("is it", "is lunch", "is dinner", "is breakfast"),
-        "thank you" to listOf("very much", "so much", "for your help", "again"),
-
-        // 2-gram contexts (bigrams)
-        "please" to listOf("can you", "can I", "help me", "give me", "call", "come", "turn on", "open"),
-        "can" to listOf("you", "I", "we", "someone"),
-        "i" to listOf("want", "need", "feel", "am", "would", "can't", "have"),
-        "to" to listOf("the", "go", "be", "have", "sit", "lie", "stand", "sleep", "eat", "drink", "walk"),
-        "the" to listOf("toilet", "restroom", "bathroom", "doctor", "nurse", "lights", "tv", "bed", "table", "door"),
-        "my" to listOf("glasses", "phone", "medicine", "blanket", "pillow", "family", "doctor"),
-        "want" to listOf("to", "water", "food", "help", "my glasses", "to rest"),
-        "need" to listOf("to", "help", "water", "medicine", "my doctor", "a tissue"),
-        "feel" to listOf("tired", "cold", "hot", "sick", "in pain", "dizzy", "better"),
-        "am" to listOf("tired", "cold", "hot", "hungry", "thirsty", "in pain", "fine"),
-        "help" to listOf("me", "us", "please", "with", "now"),
-        "turn" to listOf("on", "off", "up", "down"),
-        "call" to listOf("the doctor", "the nurse", "my family", "help"),
-        "open" to listOf("the door", "the window", "this"),
-        "close" to listOf("the door", "the window"),
-        "where" to listOf("is the", "is my", "are you"),
-        "how" to listOf("are you", "is it"),
-
-        // 1-gram / sentence start
-        "start" to listOf("I want", "I need", "Please", "Can you", "Can I", "Help me", "Where is", "Thank you")
-    )
-
-    private val defaultFallbacks = listOf("toilet", "water", "sit up", "lie down", "help", "please")
+    private const val RECENT_CONTEXT_WINDOW_MS = 3 * 60 * 1000L // 3 minutes for conversational follow-up
+    private const val HALF_LIFE_MS = 7 * 24 * 60 * 60 * 1000.0   // 7-day recency decay half-life
 
     /**
-     * Context-aware next word predictor across the FULL context window.
-     * Searches suffix patterns starting from the longest available match (5-gram -> 4-gram -> 3-gram -> 2-gram -> 1-gram).
+     * Computes the 4-signal priority score for a PhraseNodeEntity:
+     * 1. Caregiver-Pinned Boost
+     * 2. Frecency (Frequency + exponential recency decay)
+     * 3. Time-of-Day Routine Affinity (Learned bucket counts + Cold-start defaultTimeAffinity)
+     * 4. Conversational Follow-up Context (Matches followUpConceptIds of recently spoken utterances)
      */
-    fun predict(sentenceTokens: List<String>, currentPrefix: String = ""): List<String> {
-        val trimmedPrefix = currentPrefix.trim().lowercase()
+    fun computeNodeScore(
+        node: PhraseNodeEntity,
+        currentBucket: TimeBucket,
+        nowMs: Long,
+        recentFollowUpConceptIds: Set<String>,
+        includePinnedBoost: Boolean = true
+    ): Double {
+        // 1. Caregiver Pinned Priority Boost
+        val pinnedScore = if (includePinnedBoost && node.isPinned) 25.0 else 0.0
 
-        if (trimmedPrefix.isNotEmpty()) {
-            val matchedFromContext = getContextCandidates(sentenceTokens)
-                .filter { it.lowercase().startsWith(trimmedPrefix) }
-
-            val matchedFromVocab = rankedGeneralVocabulary
-                .filter { it.startsWith(trimmedPrefix) }
-
-            val results = (matchedFromContext + matchedFromVocab).distinct()
-            return if (results.isNotEmpty()) results.take(6) else defaultFallbacks
+        // 2. Frecency Score
+        val freqTerm = ln(1.0 + node.usageCount.toDouble())
+        val recencyMultiplier = if (node.lastUsedAt > 0L) {
+            val ageMs = (nowMs - node.lastUsedAt).coerceAtLeast(0L).toDouble()
+            0.5 + 0.5 * exp(-ageMs / HALF_LIFE_MS)
+        } else {
+            0.5
         }
+        val frecencyScore = 8.0 * freqTerm * recencyMultiplier
 
-        return getContextCandidates(sentenceTokens).take(6)
+        // 3. Time-of-Day Routine Affinity
+        val bucketCount = node.getTimeBucketCount(currentBucket)
+        val learnedTimeRatio = if (node.usageCount > 0) {
+            (bucketCount.toDouble() + 0.5) / (node.usageCount.toDouble() + 2.0)
+        } else {
+            0.25
+        }
+        val coldStartTimeBonus = when (node.defaultTimeAffinity) {
+            currentBucket.name -> 4.5
+            "ANY" -> 1.0
+            else -> 0.0
+        }
+        val timeScore = (learnedTimeRatio * 6.0) + coldStartTimeBonus
+
+        // 4. Conversational Follow-up Context
+        val contextScore = if (recentFollowUpConceptIds.contains(node.conceptId)) 14.0 else 0.0
+
+        // Tie-breaker using inverse sortOrder so initial layout is deterministic
+        val baseOrderTieBreaker = (100 - node.sortOrder.coerceIn(0, 100)) * 0.02
+
+        return pinnedScore + frecencyScore + timeScore + contextScore + baseOrderTieBreaker
     }
 
-    private fun getContextCandidates(sentenceTokens: List<String>): List<String> {
-        if (sentenceTokens.isEmpty()) {
-            return contextModel["start"] ?: defaultFallbacks
+    /**
+     * Ranks nodes for the current navigation level.
+     * - At Root: Keeps caregiver-pinned core starters/responses in their stable top positions
+     *   for muscle memory, while dynamically sorting secondary items by the 4-signal score.
+     * - Inside a Branch: Dynamically ranks options by the 4-signal score so the most likely
+     *   continuation is on Page 1, Slot 1.
+     */
+    fun rankTierNodes(
+        allNodes: List<PhraseNodeEntity>,
+        parentConceptId: String?,
+        recentUtterances: List<UtteranceLogEntity>,
+        nowMs: Long = System.currentTimeMillis()
+    ): List<PhraseNodeEntity> {
+        val currentBucket = TimeBucket.current(nowMs)
+        val recentFollowUpIds = extractRecentFollowUpIds(allNodes, recentUtterances, nowMs)
+
+        val tierNodes = allNodes.filter { it.parentConceptId == parentConceptId }
+
+        return if (parentConceptId == null) {
+            // Hybrid Root Layout: Pinned items keep stable muscle-memory order first,
+            // followed by unpinned items ranked by adaptive score.
+            val (pinned, unpinned) = tierNodes.partition { it.isPinned }
+            val sortedPinned = pinned.sortedWith(compareBy<PhraseNodeEntity> { it.sortOrder }.thenBy { it.id })
+            val sortedUnpinned = unpinned.sortedByDescending {
+                computeNodeScore(it, currentBucket, nowMs, recentFollowUpIds, includePinnedBoost = false)
+            }
+            sortedPinned + sortedUnpinned
+        } else {
+            tierNodes.sortedByDescending {
+                computeNodeScore(it, currentBucket, nowMs, recentFollowUpIds, includePinnedBoost = true)
+            }
         }
+    }
 
-        // Clean tokens: flatten any spaces within tokens (e.g. "Can you" -> ["can", "you"])
-        val words = sentenceTokens.flatMap { it.trim().lowercase().split("\\s+".toRegex()) }.filter { it.isNotBlank() }
-        if (words.isEmpty()) {
-            return contextModel["start"] ?: defaultFallbacks
-        }
+    /**
+     * Computes up to 2 high-value 1-tap Smart Shortcuts for the Smart Shortcuts Strip:
+     * - When navigating inside a branch (e.g. ["Can you help me to"]), surfaces the top 2 complete
+     *   sentences reachable from this branch so a 3-4 step path finishes in 1 more tap!
+     * - When at Root, surfaces the top 2 complete sentences based on conversational follow-up,
+     *   learned multi-word utterance history, and time-of-day affinity.
+     */
+    fun computeSmartShortcuts(
+        allNodes: List<PhraseNodeEntity>,
+        navigationStack: List<PhraseNodeEntity>,
+        recentUtterances: List<UtteranceLogEntity>,
+        metadata: LanguageMetadata,
+        speakerGender: SpeakerGender,
+        formality: Formality = Formality.POLITE,
+        nowMs: Long = System.currentTimeMillis()
+    ): List<SmartShortcut> {
+        if (allNodes.isEmpty()) return emptyList()
 
-        val candidates = mutableListOf<String>()
+        val currentBucket = TimeBucket.current(nowMs)
+        val recentFollowUpIds = extractRecentFollowUpIds(allNodes, recentUtterances, nowMs)
+        val nodesByParent = allNodes.groupBy { it.parentConceptId }
+        val nodesByConcept = allNodes.associateBy { it.conceptId }
 
-        // Check longest matching context suffix first (from 5 words down to 1 word)
-        val maxWindow = minOf(5, words.size)
-        for (windowSize in maxWindow downTo 1) {
-            val suffixKey = words.takeLast(windowSize).joinToString(" ")
-            if (contextModel.containsKey(suffixKey)) {
-                candidates.addAll(contextModel[suffixKey]!!)
-                // If we found a high-order match (3+ words), prioritize it heavily
-                if (windowSize >= 3 && candidates.size >= 4) {
-                    break
+        // CASE 1: User is inside a branch -> surface top 2 full-sentence completions from this branch
+        if (navigationStack.isNotEmpty()) {
+            val prefixNodes = navigationStack
+            val leafPaths = mutableListOf<List<PhraseNodeEntity>>()
+
+            fun collectLeafPaths(currentPath: List<PhraseNodeEntity>, depth: Int) {
+                if (depth > 5) return
+                val lastNode = currentPath.last()
+                val children = nodesByParent[lastNode.conceptId].orEmpty()
+                if (children.isEmpty()) {
+                    if (currentPath.size > prefixNodes.size) {
+                        leafPaths.add(currentPath)
+                    }
+                } else {
+                    children.forEach { child ->
+                        collectLeafPaths(currentPath + child, depth + 1)
+                    }
                 }
+            }
+
+            collectLeafPaths(prefixNodes, 0)
+
+            return leafPaths
+                .map { path ->
+                    val leaf = path.last()
+                    val fullSentence = SentenceComposer.joinTokens(
+                        tokens = path.map { it.text },
+                        currentTypingWord = "",
+                        metadata = metadata,
+                        gender = speakerGender,
+                        formality = formality
+                    )
+                    // Score path by leaf score + any matching utterance history
+                    val leafScore = computeNodeScore(leaf, currentBucket, nowMs, recentFollowUpIds)
+                    val pathKey = path.joinToString(">") { it.conceptId }
+                    val historyMatches = recentUtterances.count { it.conceptPath == pathKey }
+                    val totalScore = leafScore + (historyMatches * 6.0)
+                    val badge = when {
+                        historyMatches > 0 -> "★ Often Used"
+                        leaf.defaultTimeAffinity == currentBucket.name -> "🕒 ${currentBucket.name.lowercase().replaceFirstChar { it.uppercase() }}"
+                        else -> "⚡ 1-Tap Finish"
+                    }
+                    totalScore to SmartShortcut(
+                        id = "branch_${leaf.conceptId}",
+                        fullText = fullSentence,
+                        iconEmoji = leaf.iconEmoji,
+                        badgeLabel = badge,
+                        conceptPath = path.map { it.conceptId }
+                    )
+                }
+                .sortedByDescending { it.first }
+                .take(2)
+                .map { it.second }
+        }
+
+        // CASE 2: User is at Root -> combine conversational follow-ups, top learned full sentences, and time-of-day routines
+        val candidates = mutableListOf<Pair<Double, SmartShortcut>>()
+
+        // 2A: Conversational follow-up candidates (if user spoke within last 3 minutes)
+        for (followId in recentFollowUpIds) {
+            val node = nodesByConcept[followId] ?: continue
+            // Build full path from root to this node if it's a leaf, or use its best child if it's a branch
+            val fullPath = buildFullDefaultPath(node, nodesByConcept, nodesByParent, currentBucket, nowMs, recentFollowUpIds)
+            val fullText = SentenceComposer.joinTokens(
+                tokens = fullPath.map { it.text },
+                currentTypingWord = "",
+                metadata = metadata,
+                gender = speakerGender,
+                formality = formality
+            )
+            val leaf = fullPath.last()
+            val score = 40.0 + computeNodeScore(leaf, currentBucket, nowMs, recentFollowUpIds)
+            candidates.add(
+                score to SmartShortcut(
+                    id = "ctx_${leaf.conceptId}",
+                    fullText = fullText,
+                    iconEmoji = leaf.iconEmoji,
+                    badgeLabel = "💬 Follow-Up",
+                    conceptPath = fullPath.map { it.conceptId }
+                )
+            )
+        }
+
+        // 2B: Frequently spoken multi-token utterances from UtteranceLogEntity
+        val groupedHistory = recentUtterances
+            .filter { it.spokenText.isNotBlank() }
+            .groupBy { it.spokenText.trim() }
+
+        for ((text, logs) in groupedHistory) {
+            val latest = logs.maxByOrNull { it.timestamp } ?: continue
+            val count = logs.size
+            val bucketMatches = logs.count { it.timeBucket == currentBucket.name }
+            val ageMs = (nowMs - latest.timestamp).coerceAtLeast(0L).toDouble()
+            val recency = exp(-ageMs / HALF_LIFE_MS)
+            val score = 15.0 + (ln(1.0 + count) * 10.0 * recency) + (bucketMatches * 3.5)
+            val pathList = latest.conceptPath.split(">").filter { it.isNotBlank() }
+            val leafNode = pathList.lastOrNull()?.let { nodesByConcept[it] }
+            candidates.add(
+                score to SmartShortcut(
+                    id = "hist_${text.hashCode()}",
+                    fullText = text,
+                    iconEmoji = leafNode?.iconEmoji ?: "🔊",
+                    badgeLabel = if (bucketMatches > 0) "★ Routine" else "★ Frequent",
+                    conceptPath = pathList
+                )
+            )
+        }
+
+        // 2C: Best Time-of-Day complete sentences from concept tree (cold-start & daily routine)
+        val allLeaves = allNodes.filter { nodesByParent[it.conceptId].isNullOrEmpty() }
+        for (leaf in allLeaves) {
+            val ancestors = buildAncestorsToRoot(leaf, nodesByConcept)
+            val fullText = SentenceComposer.joinTokens(
+                tokens = ancestors.map { it.text },
+                currentTypingWord = "",
+                metadata = metadata,
+                gender = speakerGender,
+                formality = formality
+            )
+            // Avoid duplicating single-word Yes/No which are already on Page 1 root
+            if (ancestors.size == 1 && leaf.isPinned) continue
+
+            val score = computeNodeScore(leaf, currentBucket, nowMs, recentFollowUpIds, includePinnedBoost = false) +
+                (if (ancestors.size > 1) 4.0 else 0.0)
+            val badge = when {
+                leaf.defaultTimeAffinity == currentBucket.name -> "🕒 ${currentBucket.name.lowercase().replaceFirstChar { it.uppercase() }}"
+                leaf.usageCount > 0 -> "★ Suggested"
+                else -> "⚡ Quick Speak"
+            }
+            candidates.add(
+                score to SmartShortcut(
+                    id = "time_${leaf.conceptId}",
+                    fullText = fullText,
+                    iconEmoji = leaf.iconEmoji,
+                    badgeLabel = badge,
+                    conceptPath = ancestors.map { it.conceptId }
+                )
+            )
+        }
+
+        return candidates
+            .sortedByDescending { it.first }
+            .distinctBy { it.second.fullText.lowercase() }
+            .take(2)
+            .map { it.second }
+    }
+
+    /**
+     * Predicts next words by combining:
+     * 1. Learned User N-grams (from UserNgramEntity)
+     * 2. Language Pack N-grams
+     * 3. Language Pack Core Vocabulary + Custom Phrases
+     * Supports accent-insensitive prefix filtering.
+     */
+    fun predictWords(
+        sentenceTokens: List<String>,
+        currentPrefix: String,
+        pack: LanguagePackData,
+        userNgrams: List<UserNgramEntity>,
+        allNodes: List<PhraseNodeEntity>
+    ): List<String> {
+        val normalizedPrefix = SentenceComposer.normalizeForMatch(currentPrefix)
+        val contextCandidates = getContextCandidates(sentenceTokens, pack, userNgrams)
+
+        // Include words from custom nodes added by caregiver/user
+        val customWords = allNodes
+            .filter { it.isCustom }
+            .flatMap { it.text.split("\\s+".toRegex()) }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+        if (normalizedPrefix.isNotEmpty()) {
+            val matchedContext = contextCandidates.filter {
+                SentenceComposer.normalizeForMatch(it).startsWith(normalizedPrefix)
+            }
+            val matchedCustom = customWords.filter {
+                SentenceComposer.normalizeForMatch(it).startsWith(normalizedPrefix)
+            }
+            val matchedVocab = pack.coreVocabulary.filter {
+                SentenceComposer.normalizeForMatch(it).startsWith(normalizedPrefix)
+            }
+            val combined = (matchedContext + matchedCustom + matchedVocab)
+                .distinctBy { it.lowercase() }
+            return if (combined.isNotEmpty()) combined.take(6) else listOf(currentPrefix)
+        }
+
+        return contextCandidates.take(6)
+    }
+
+    /**
+     * Computes which letters on the keyboard can validly continue a word given the current prefix
+     * and highlights the top 4 most probable next letters so a motor-impaired user can spot them immediately.
+     */
+    fun computeLetterHighlights(
+        sentenceTokens: List<String>,
+        currentPrefix: String,
+        pack: LanguagePackData,
+        userNgrams: List<UserNgramEntity>,
+        allNodes: List<PhraseNodeEntity>
+    ): Map<String, LetterHighlight> {
+        val normalizedPrefix = SentenceComposer.normalizeForMatch(currentPrefix)
+        val contextCandidates = getContextCandidates(sentenceTokens, pack, userNgrams)
+        val customWords = allNodes.flatMap { it.text.split("\\s+".toRegex()) }
+
+        // Weight candidate words higher if they come from current context
+        val weightedPool = mutableMapOf<String, Int>()
+        contextCandidates.forEachIndexed { idx, phrase ->
+            val firstWord = phrase.trim().split("\\s+".toRegex()).firstOrNull().orEmpty()
+            if (firstWord.isNotEmpty()) {
+                val weight = (20 - idx).coerceAtLeast(5)
+                weightedPool[firstWord.lowercase()] = (weightedPool[firstWord.lowercase()] ?: 0) + weight
+            }
+        }
+        customWords.forEach { w ->
+            val clean = w.trim().lowercase()
+            if (clean.isNotEmpty()) {
+                weightedPool[clean] = (weightedPool[clean] ?: 0) + 3
+            }
+        }
+        pack.coreVocabulary.forEachIndexed { idx, w ->
+            val clean = w.trim().lowercase()
+            if (clean.isNotEmpty()) {
+                val weight = if (idx < 25) 3 else 1
+                weightedPool[clean] = (weightedPool[clean] ?: 0) + weight
             }
         }
 
-        if (candidates.isEmpty()) {
-            candidates.addAll(defaultFallbacks)
+        val letterScores = mutableMapOf<String, Int>()
+        for ((word, weight) in weightedPool) {
+            val normWord = SentenceComposer.normalizeForMatch(word)
+            if (normWord.startsWith(normalizedPrefix) && normWord.length > normalizedPrefix.length) {
+                val nextChar = normWord[normalizedPrefix.length].uppercaseChar().toString()
+                letterScores[nextChar] = (letterScores[nextChar] ?: 0) + weight
+            }
         }
 
-        return candidates.distinct()
+        val top4Letters = letterScores.entries
+            .sortedByDescending { it.value }
+            .take(4)
+            .map { it.key }
+            .toSet()
+
+        val allKeyboardLetters = pack.metadata.keyboardPages.flatten()
+        return allKeyboardLetters.associateWith { key ->
+            val normKey = SentenceComposer.normalizeForMatch(key).uppercase()
+            val isPunctuation = key == "'" || key == "?"
+            val isPossible = letterScores.isEmpty() || letterScores.containsKey(normKey) || isPunctuation
+            val isTopLikely = top4Letters.contains(normKey)
+            LetterHighlight(
+                letter = key,
+                isPossible = isPossible,
+                isTopLikely = isTopLikely
+            )
+        }
+    }
+
+    private fun getContextCandidates(
+        sentenceTokens: List<String>,
+        pack: LanguagePackData,
+        userNgrams: List<UserNgramEntity>
+    ): List<String> {
+        val words = sentenceTokens
+            .flatMap { it.trim().lowercase().split("\\s+".toRegex()) }
+            .filter { it.isNotBlank() }
+
+        if (words.isEmpty()) {
+            val learnedStarts = userNgrams
+                .filter { it.contextKey == "start" }
+                .sortedByDescending { it.usageCount }
+                .map { it.nextWord }
+            val packStarts = pack.ngrams["start"].orEmpty()
+            return (learnedStarts + packStarts).distinctBy { it.lowercase() }
+        }
+
+        val results = mutableListOf<String>()
+        val maxWindow = minOf(5, words.size)
+
+        for (windowSize in maxWindow downTo 1) {
+            val suffixKey = words.takeLast(windowSize).joinToString(" ")
+            // 1. User's personal learned N-grams first
+            val personalMatches = userNgrams
+                .filter { it.contextKey == suffixKey }
+                .sortedByDescending { it.usageCount }
+                .map { it.nextWord }
+            results.addAll(personalMatches)
+
+            // 2. Language Pack static N-grams
+            pack.ngrams[suffixKey]?.let { results.addAll(it) }
+
+            if (windowSize >= 3 && results.size >= 5) break
+        }
+
+        if (results.isEmpty()) {
+            results.addAll(pack.coreVocabulary.take(6))
+        }
+
+        return results.distinctBy { it.lowercase() }
+    }
+
+    private fun extractRecentFollowUpIds(
+        allNodes: List<PhraseNodeEntity>,
+        recentUtterances: List<UtteranceLogEntity>,
+        nowMs: Long
+    ): Set<String> {
+        val recentLogs = recentUtterances.filter { (nowMs - it.timestamp) in 0..RECENT_CONTEXT_WINDOW_MS }
+        if (recentLogs.isEmpty()) return emptySet()
+
+        val nodesByConcept = allNodes.associateBy { it.conceptId }
+        val followUps = mutableSetOf<String>()
+        for (log in recentLogs) {
+            val pathIds = log.conceptPath.split(">").filter { it.isNotBlank() }
+            for (cid in pathIds) {
+                nodesByConcept[cid]?.getFollowUpIdsList()?.let { followUps.addAll(it) }
+            }
+        }
+        return followUps
+    }
+
+    private fun buildAncestorsToRoot(
+        node: PhraseNodeEntity,
+        nodesByConcept: Map<String, PhraseNodeEntity>
+    ): List<PhraseNodeEntity> {
+        val chain = mutableListOf(node)
+        var currentParentId = node.parentConceptId
+        var guard = 0
+        while (currentParentId != null && guard < 6) {
+            val parent = nodesByConcept[currentParentId] ?: break
+            chain.add(0, parent)
+            currentParentId = parent.parentConceptId
+            guard++
+        }
+        return chain
+    }
+
+    private fun buildFullDefaultPath(
+        node: PhraseNodeEntity,
+        nodesByConcept: Map<String, PhraseNodeEntity>,
+        nodesByParent: Map<String?, List<PhraseNodeEntity>>,
+        currentBucket: TimeBucket,
+        nowMs: Long,
+        recentFollowUpIds: Set<String>
+    ): List<PhraseNodeEntity> {
+        val prefix = buildAncestorsToRoot(node, nodesByConcept).toMutableList()
+        var current = node
+        var guard = 0
+        while (guard < 5) {
+            val children = nodesByParent[current.conceptId].orEmpty()
+            if (children.isEmpty()) break
+            val bestChild = children.maxByOrNull {
+                computeNodeScore(it, currentBucket, nowMs, recentFollowUpIds)
+            } ?: break
+            prefix.add(bestChild)
+            current = bestChild
+            guard++
+        }
+        return prefix
     }
 }
