@@ -1,13 +1,17 @@
 package com.assisted.speech.tts
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import java.util.Locale
 
-class SpeechManager(context: Context, onReady: () -> Unit = {}) : TextToSpeech.OnInitListener {
+class SpeechManager(context: Context, private val onReady: () -> Unit = {}) : TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var isInitialized = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingSpeech: String? = null
 
     init {
         tts = TextToSpeech(context.applicationContext, this)
@@ -20,21 +24,36 @@ class SpeechManager(context: Context, onReady: () -> Unit = {}) : TextToSpeech.O
                 Log.w("SpeechManager", "Default language not supported or missing data, falling back to US English.")
                 tts?.setLanguage(Locale.US)
             }
-            tts?.setSpeechRate(0.85f) // Slightly slower rate for assisted speech clarity
+            tts?.setSpeechRate(0.85f)
             isInitialized = true
+            onReady()
+
+            // If a speech request arrived before initialization finished
+            pendingSpeech?.let { text ->
+                speak(text)
+                pendingSpeech = null
+            }
         } else {
             Log.e("SpeechManager", "TTS initialization failed with status $status")
         }
     }
 
     fun speak(text: String) {
-        if (!isInitialized || text.isBlank()) return
-        tts?.stop()
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "SpeechId_${System.currentTimeMillis()}")
+        if (text.isBlank()) return
+        if (!isInitialized) {
+            pendingSpeech = text
+            return
+        }
+        mainHandler.post {
+            tts?.stop()
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "SpeechId_${System.currentTimeMillis()}")
+        }
     }
 
     fun stop() {
-        tts?.stop()
+        mainHandler.post {
+            tts?.stop()
+        }
     }
 
     fun shutdown() {

@@ -16,9 +16,9 @@ enum class AppMode {
 
 data class SpeechUiState(
     val currentMode: AppMode = AppMode.PHRASES,
-    val selectedCategory: String = "All",
+    val selectedCategory: String = "Starters",
     val sentenceTokens: List<String> = emptyList(),
-    val categories: List<String> = listOf("All"),
+    val categories: List<String> = listOf("Starters", "Basic Needs", "Feelings", "Requests", "Quick"),
     val phrases: List<PhraseItem> = emptyList(),
     val predictions: List<String> = emptyList()
 )
@@ -35,9 +35,14 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
         // Observe categories
         viewModelScope.launch {
             phraseDao.getCategories().collect { cats ->
-                val allCats = mutableListOf("All")
-                allCats.addAll(cats)
-                _uiState.update { it.copy(categories = allCats.distinct()) }
+                if (cats.isNotEmpty()) {
+                    val order = listOf("Starters", "Basic Needs", "Feelings", "Requests", "Quick")
+                    val sortedCats = order.filter { cats.contains(it) } + cats.filter { !order.contains(it) }
+                    _uiState.update { current ->
+                        val initialCat = if (current.selectedCategory in sortedCats) current.selectedCategory else sortedCats.first()
+                        current.copy(categories = sortedCats, selectedCategory = initialCat)
+                    }
+                }
             }
         }
 
@@ -65,17 +70,18 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onPhraseSelected(phrase: PhraseItem) {
         val newTokens = _uiState.value.sentenceTokens + phrase.text
-        _uiState.update { it.copy(sentenceTokens = newTokens) }
+        
+        // Determine next category if applicable
+        val nextCategory = phrase.followUpCategory ?: _uiState.value.selectedCategory
 
-        viewModelScope.launch {
-            phraseDao.incrementUsage(phrase.id)
+        _uiState.update { 
+            it.copy(
+                sentenceTokens = newTokens,
+                selectedCategory = nextCategory
+            ) 
         }
 
-        if (phrase.type == PhraseType.COMPLETE && newTokens.size == 1) {
-            speakCurrentSentence()
-        } else {
-            updatePredictions()
-        }
+        updatePredictions()
     }
 
     fun onPredictWordSelected(word: String) {
@@ -111,12 +117,17 @@ class SpeechViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun clearSentence() {
-        _uiState.update { it.copy(sentenceTokens = emptyList()) }
+        _uiState.update { 
+            it.copy(
+                sentenceTokens = emptyList(),
+                selectedCategory = "Starters"
+            ) 
+        }
         updatePredictions()
     }
 
     fun speakCurrentSentence() {
-        val sentence = _uiState.value.sentenceTokens.joinToString(" ")
+        val sentence = _uiState.value.sentenceTokens.joinToString(" ").trim()
         if (sentence.isNotBlank()) {
             speechManager.speak(sentence)
         }

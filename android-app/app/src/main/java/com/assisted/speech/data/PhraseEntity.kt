@@ -4,8 +4,9 @@ import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
 enum class PhraseType {
-    COMPLETE,  // Standalone full phrase (e.g., "I need help", "Yes")
-    FRAGMENT   // Sentence fragment (e.g., "I want", "Water")
+    COMPLETE,  // Standalone full phrase (e.g., "Yes", "No", "Thank you")
+    STARTER,   // Sentence starter (e.g., "I want", "I need", "I feel", "Can you")
+    FRAGMENT   // Predicate / Object continuation (e.g., "Water", "Food", "Help", "Tired")
 }
 
 @Entity(tableName = "phrases")
@@ -16,15 +17,17 @@ data class PhraseItem(
     val type: PhraseType,
     val iconEmoji: String = "💬",
     val usageCount: Int = 0,
+    // If set, selecting a starter will filter or jump to follow-up category
+    val followUpCategory: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 
 @Dao
 interface PhraseDao {
-    @Query("SELECT * FROM phrases ORDER BY usageCount DESC, id ASC")
+    @Query("SELECT * FROM phrases ORDER BY id ASC")
     fun getAllPhrases(): Flow<List<PhraseItem>>
 
-    @Query("SELECT * FROM phrases WHERE category = :category ORDER BY usageCount DESC, id ASC")
+    @Query("SELECT * FROM phrases WHERE category = :category ORDER BY id ASC")
     fun getPhrasesByCategory(category: String): Flow<List<PhraseItem>>
 
     @Query("SELECT DISTINCT category FROM phrases")

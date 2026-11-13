@@ -3,6 +3,7 @@ package com.assisted.speech.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -10,10 +11,11 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -43,15 +45,18 @@ fun MainScreen(viewModel: SpeechViewModel) {
     val uiState by viewModel.uiState.collectAsState()
 
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding(),
         color = BackgroundDark
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp)
+                .padding(horizontal = 10.dp, vertical = 6.dp)
         ) {
-            // 1. TOP SENTENCE ACCUMULATOR BAR
+            // 1. TOP SENTENCE BAR: 2 rows to ensure text and action buttons are spacious
             SentenceAccumulatorBar(
                 sentenceTokens = uiState.sentenceTokens,
                 onSpeak = { viewModel.speakCurrentSentence() },
@@ -59,7 +64,7 @@ fun MainScreen(viewModel: SpeechViewModel) {
                 onClear = { viewModel.clearSentence() }
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // 2. MODE NAVIGATION TABS
             ModeTabs(
@@ -67,7 +72,7 @@ fun MainScreen(viewModel: SpeechViewModel) {
                 onModeSelected = { viewModel.setMode(it) }
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // 3. CURRENT VIEW BODY
             Box(modifier = Modifier.weight(1f)) {
@@ -75,9 +80,7 @@ fun MainScreen(viewModel: SpeechViewModel) {
                     AppMode.PHRASES -> PhrasesModeView(
                         categories = uiState.categories,
                         selectedCategory = uiState.selectedCategory,
-                        phrases = uiState.phrases.filter {
-                            uiState.selectedCategory == "All" || it.category == uiState.selectedCategory
-                        },
+                        phrases = uiState.phrases.filter { it.category == uiState.selectedCategory },
                         onSelectCategory = { viewModel.selectCategory(it) },
                         onSelectPhrase = { viewModel.onPhraseSelected(it) }
                     )
@@ -109,72 +112,85 @@ fun SentenceAccumulatorBar(
     onBackspace: () -> Unit,
     onClear: () -> Unit
 ) {
+    val scrollState = rememberScrollState()
+
+    // Scroll to the end when new words are added
+    LaunchedEffect(sentenceTokens) {
+        if (sentenceTokens.isNotEmpty()) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(95.dp),
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = CardDark),
         shape = RoundedCornerShape(16.dp),
-        border = androidx.compose.foundation.BorderStroke(2.dp, BorderDark)
+        border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFF38BDF8))
     ) {
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Row 1: Large Text Display with horizontal scrolling
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
+                    .fillMaxWidth()
+                    .height(64.dp)
                     .background(Color(0xFF090D16), RoundedCornerShape(10.dp))
-                    .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
-                    .padding(horizontal = 14.dp),
+                    .border(1.5.dp, BorderDark, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
                 Text(
-                    text = if (sentenceTokens.isEmpty()) "Tap phrases to compose sentence..." else sentenceTokens.joinToString(" "),
+                    text = if (sentenceTokens.isEmpty()) "Tap a starter or phrase..." else sentenceTokens.joinToString(" "),
                     color = if (sentenceTokens.isEmpty()) TextMuted else Color(0xFF38BDF8),
-                    fontSize = 22.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 2
+                    maxLines = 1,
+                    modifier = Modifier.horizontalScroll(scrollState)
                 )
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Action Buttons
-            Button(
-                onClick = onSpeak,
-                modifier = Modifier.fillMaxHeight().width(115.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
-                shape = RoundedCornerShape(12.dp)
+            // Row 2: Large Action Buttons (PLAY, BACKSPACE, CLEAR)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Speak", modifier = Modifier.size(28.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("PLAY", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-            }
+                // SPEAK / PLAY BUTTON
+                Button(
+                    onClick = onSpeak,
+                    modifier = Modifier.weight(1.8f).fillMaxHeight(),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Speak", modifier = Modifier.size(28.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("SPEAK", fontSize = 20.sp, fontWeight = FontWeight.Black)
+                }
 
-            Spacer(modifier = Modifier.width(8.dp))
+                // BACKSPACE BUTTON
+                Button(
+                    onClick = onBackspace,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentAmber),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Undo", modifier = Modifier.size(26.dp))
+                }
 
-            Button(
-                onClick = onBackspace,
-                modifier = Modifier.fillMaxHeight().width(85.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentAmber),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.Backspace, contentDescription = "Undo", modifier = Modifier.size(24.dp))
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = onClear,
-                modifier = Modifier.fillMaxHeight().width(85.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(24.dp))
+                // CLEAR ALL BUTTON
+                Button(
+                    onClick = onClear,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(28.dp))
+                }
             }
         }
     }
@@ -187,17 +203,17 @@ fun ModeTabs(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         listOf(
             AppMode.PHRASES to "💬 Phrases",
-            AppMode.PREDICTIVE to "⌨ Predictive",
-            AppMode.MANAGEMENT to "⚙ Management"
+            AppMode.PREDICTIVE to "⌨ Predictor",
+            AppMode.MANAGEMENT to "⚙ Manage"
         ).forEach { (mode, label) ->
             val isSelected = currentMode == mode
             Button(
                 onClick = { onModeSelected(mode) },
-                modifier = Modifier.weight(1f).height(58.dp),
+                modifier = Modifier.weight(1f).height(50.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isSelected) AccentBlue else CardDark
                 ),
@@ -209,7 +225,7 @@ fun ModeTabs(
             ) {
                 Text(
                     text = label,
-                    fontSize = 18.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isSelected) Color.White else TextMuted
                 )
@@ -236,42 +252,51 @@ fun PhrasesModeView(
                 val isSelected = selectedCategory == cat
                 Button(
                     onClick = { onSelectCategory(cat) },
-                    modifier = Modifier.height(48.dp),
+                    modifier = Modifier.height(46.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isSelected) Color(0xFF0284C7) else CardDark
                     ),
                     shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, if (isSelected) Color(0xFF38BDF8) else BorderDark)
+                    border = androidx.compose.foundation.BorderStroke(2.dp, if (isSelected) Color(0xFF38BDF8) else BorderDark)
                 ) {
-                    Text(text = cat, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = cat,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) Color.White else TextMuted
+                    )
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Large Button Phrases Grid (minimum 100dp height per target)
+        // Large Button Phrases Grid (minimum 90dp height per target)
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 180.dp),
+            columns = GridCells.Fixed(2),
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(phrases) { phrase ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(95.dp)
+                        .height(90.dp)
                         .clickable { onSelectPhrase(phrase) },
                     colors = CardDefaults.cardColors(containerColor = CardDark),
                     shape = RoundedCornerShape(16.dp),
                     border = androidx.compose.foundation.BorderStroke(
                         2.5.dp,
-                        if (phrase.type == PhraseType.FRAGMENT) Color(0xFF38BDF8) else Color(0xFF4ADE80)
+                        when (phrase.type) {
+                            PhraseType.STARTER -> Color(0xFF38BDF8)
+                            PhraseType.FRAGMENT -> Color(0xFFA855F7)
+                            PhraseType.COMPLETE -> Color(0xFF4ADE80)
+                        }
                     )
                 ) {
                     Column(
-                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                        modifier = Modifier.fillMaxSize().padding(6.dp),
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -281,7 +306,8 @@ fun PhrasesModeView(
                             color = TextLight,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            maxLines = 1
                         )
                     }
                 }
@@ -297,38 +323,38 @@ fun PredictiveModeView(
     onLetterTyped: (String) -> Unit,
     onSpace: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "RECOMMENDED NEXT WORDS",
+            text = "PREDICTED NEXT WORDS",
             color = Color(0xFF38BDF8),
-            fontSize = 15.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.Bold
         )
 
         // 6 Large Prediction Buttons
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
-            modifier = Modifier.fillMaxWidth().height(170.dp),
+            modifier = Modifier.fillMaxWidth().height(160.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(predictions.take(6)) { word ->
                 Button(
                     onClick = { onPredictSelect(word) },
-                    modifier = Modifier.fillMaxSize().height(75.dp),
+                    modifier = Modifier.fillMaxSize().height(72.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A)),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFF3B82F6))
                 ) {
-                    Text(text = word, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                    Text(text = word, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, textAlign = TextAlign.Center)
                 }
             }
         }
 
         Text(
-            text = "ALPHABET / SPELLING FALLBACK",
+            text = "ALPHABET / SPELLING",
             color = TextMuted,
-            fontSize = 15.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.Bold
         )
 
@@ -343,10 +369,11 @@ fun PredictiveModeView(
             items(alphabet) { letter ->
                 Button(
                     onClick = { onLetterTyped(letter) },
-                    modifier = Modifier.height(52.dp),
+                    modifier = Modifier.height(50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = CardDark),
                     shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark),
+                    contentPadding = PaddingValues(0.dp)
                 ) {
                     Text(text = letter, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
@@ -356,11 +383,11 @@ fun PredictiveModeView(
         // Space / Next Word Button
         Button(
             onClick = onSpace,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Text(text = "␣ NEXT WORD / SPACE", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(text = "␣ NEXT WORD / SPACE", fontSize = 17.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -382,8 +409,8 @@ fun ManagementModeView(
             shape = RoundedCornerShape(16.dp),
             border = androidx.compose.foundation.BorderStroke(1.5.dp, BorderDark)
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Add New Phrase / Vocabulary", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Add New Phrase / Fragment", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
 
                 OutlinedTextField(
                     value = newText,
@@ -405,7 +432,16 @@ fun ManagementModeView(
                             containerColor = if (selectedType == PhraseType.COMPLETE) AccentBlue else Color.DarkGray
                         )
                     ) {
-                        Text("Complete Phrase")
+                        Text("Complete")
+                    }
+
+                    Button(
+                        onClick = { selectedType = PhraseType.STARTER },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedType == PhraseType.STARTER) AccentBlue else Color.DarkGray
+                        )
+                    ) {
+                        Text("Starter")
                     }
 
                     Button(
@@ -414,7 +450,7 @@ fun ManagementModeView(
                             containerColor = if (selectedType == PhraseType.FRAGMENT) AccentBlue else Color.DarkGray
                         )
                     ) {
-                        Text("Sentence Fragment")
+                        Text("Fragment")
                     }
                 }
 
@@ -425,18 +461,18 @@ fun ManagementModeView(
                             newText = ""
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("Add Phrase", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Add Phrase", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        Text("Saved Phrases (${phrases.size})", color = TextMuted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text("Saved Phrases (${phrases.size})", color = TextMuted, fontSize = 15.sp, fontWeight = FontWeight.Bold)
 
         Spacer(modifier = Modifier.height(6.dp))
 
@@ -456,15 +492,15 @@ fun ManagementModeView(
                     Text(
                         text = item.text,
                         color = Color.White,
-                        fontSize = 18.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
                     Text(
                         text = "[${item.category}]",
                         color = TextMuted,
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(horizontal = 8.dp)
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 6.dp)
                     )
                     IconButton(onClick = { onDeletePhrase(item) }) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete", tint = AccentRed)
