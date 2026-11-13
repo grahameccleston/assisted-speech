@@ -1,0 +1,17 @@
+# Built deliverables & binaries
+AssistedSpeech.apk
+*.apk
+*.aab
+
+# Gradle & Build caches
+.gradle/
+build/
+*/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# OS / Tooling
+*.log
+Thumbs.db

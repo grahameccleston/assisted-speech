@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Assisted Speech AAC - Mobility First</title>
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --accent-green: #16a34a;
+      --accent-red: #dc2626;
+      --accent-amber: #d97706;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --btn-min-height: 85px;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+
+    body {
+      margin: 0;
+      padding: 12px;
+      background-color: var(--bg-color);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* TOP SENTENCE BAR */
+    .sentence-container {
+      background: var(--card-bg);
+      border: 3px solid #475569;
+      border-radius: 16px;
+      padding: 12px 16px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 12px;
+      min-height: 90px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+
+    .sentence-display {
+      flex: 1;
+      font-size: 26px;
+      font-weight: 700;
+      color: #38bdf8;
+      overflow-x: auto;
+      white-space: nowrap;
+      padding: 8px 12px;
+      background: #090d16;
+      border-radius: 10px;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      border: 1px solid #1e293b;
+    }
+
+    .sentence-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* LARGE ACTION BUTTONS */
+    .action-btn {
+      min-height: 64px;
+      min-width: 90px;
+      font-size: 19px;
+      font-weight: 800;
+      border: 3px solid transparent;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.08s ease, filter 0.08s ease;
+      color: white;
+    }
+
+    .action-btn:active {
+      transform: scale(0.96);
+      filter: brightness(1.2);
+    }
+
+    .btn-speak { background: var(--accent-green); border-color: #22c55e; min-width: 130px; }
+    .btn-backspace { background: var(--accent-amber); border-color: #f59e0b; }
+    .btn-clear { background: var(--accent-red); border-color: #ef4444; }
+
+    /* NAVIGATION TABS / MODES */
+    .nav-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .tab-btn {
+      min-height: 60px;
+      font-size: 20px;
+      font-weight: 700;
+      background: #1e293b;
+      color: var(--text-muted);
+      border: 2px solid #334155;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn.active {
+      background: #2563eb;
+      color: white;
+      border-color: #60a5fa;
+      box-shadow: 0 0 16px rgba(37,99,235,0.4);
+    }
+
+    /* VIEW CONTENT */
+    .view-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* SUB-CATEGORY SELECTOR */
+    .category-bar {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+
+    .cat-btn {
+      font-size: 18px;
+      font-weight: 700;
+      padding: 10px 18px;
+      border-radius: 10px;
+      background: #1e293b;
+      color: #94a3b8;
+      border: 2px solid #334155;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .cat-btn.active {
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #38bdf8;
+    }
+
+    /* GRID OF LARGE TILES */
+    .tiles-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-auto-rows: 1fr;
+      gap: 12px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .phrase-tile {
+      background: #1e293b;
+      border: 3px solid #334155;
+      border-radius: 18px;
+      color: #f8fafc;
+      font-size: 22px;
+      font-weight: 700;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 12px;
+      cursor: pointer;
+      transition: transform 0.08s ease, border-color 0.15s, background-color 0.15s;
+      min-height: var(--btn-min-height);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    }
+
+    .phrase-tile:active {
+      transform: scale(0.97);
+      border-color: #38bdf8;
+      background-color: #28374d;
+    }
+
+    .phrase-tile .tile-icon {
+      font-size: 32px;
+      margin-bottom: 6px;
+    }
+
+    .phrase-tile.fragment {
+      border-left: 8px solid #38bdf8;
+    }
+
+    .phrase-tile.complete {
+      border-left: 8px solid #4ade80;
+    }
+
+    /* PREDICTIVE KEYBOARD VIEW */
+    .predictive-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      gap: 12px;
+    }
+
+    .predictions-section {
+      background: #162032;
+      border: 2px solid #38bdf8;
+      border-radius: 14px;
+      padding: 10px;
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #38bdf8;
+      margin-bottom: 8px;
+    }
+
+    .prediction-tiles {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 10px;
+      min-height: 160px;
+    }
+
+    .predict-tile {
+      background: #1e3a8a;
+      border: 2px solid #3b82f6;
+      border-radius: 12px;
+      color: white;
+      font-size: 24px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.08s;
+    }
+
+    .predict-tile:active {
+      transform: scale(0.95);
+      background: #2563eb;
+    }
+
+    .alphabet-section {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+      overflow-y: auto;
+    }
+
+    .letter-btn {
+      background: #1e293b;
+      border: 2px solid #475569;
+      color: white;
+      font-size: 22px;
+      font-weight: 700;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      min-height: 52px;
+    }
+
+    .letter-btn:active {
+      background: #334155;
+      transform: scale(0.95);
+    }
+
+    .letter-btn.space-key {
+      grid-column: span 3;
+      background: #334155;
+      font-size: 18px;
+    }
+
+    /* MANAGEMENT VIEW */
+    .mgmt-container {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      height: 100%;
+    }
+
+    .mgmt-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .mgmt-row label {
+      font-size: 17px;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+
+    .mgmt-input, .mgmt-select {
+      background: #090d16;
+      border: 2px solid #475569;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 20px;
+      color: white;
+    }
+
+    .mgmt-input:focus, .mgmt-select:focus {
+      border-color: #38bdf8;
+      outline: none;
+    }
+
+    .mgmt-btn {
+      padding: 16px;
+      font-size: 20px;
+      font-weight: 800;
+      border-radius: 12px;
+      border: none;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+    }
+
+    .mgmt-btn:hover { background: #1d4ed8; }
+
+    .phrases-list {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .phrase-list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #090d16;
+      border: 1px solid #334155;
+      padding: 12px 16px;
+      border-radius: 10px;
+    }
+
+    .delete-btn {
+      background: #dc2626;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .status-badge {
+      font-size: 14px;
+      color: #4ade80;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TOP SENTENCE ACCUMULATOR -->
+  <div class="sentence-container">
+    <div id="sentenceDisplay" class="sentence-display" aria-live="polite">Tap phrases to start speaking...</div>
+    <div class="sentence-actions">
+      <button class="action-btn btn-speak" onclick="speakCurrentSentence()" title="Speak current sentence">
+        🔊 SPEAK
+      </button>
+      <button class="action-btn btn-backspace" onclick="backspaceSentence()" title="Delete last item">
+        ⌫ UNDO
+      </button>
+      <button class="action-btn btn-clear" onclick="clearSentence()" title="Clear entire sentence">
+        ✕ CLEAR
+      </button>
+    </div>
+  </div>
+
+  <!-- NAVIGATION TABS -->
+  <div class="nav-tabs">
+    <button id="tabPhrases" class="tab-btn active" onclick="switchMode('phrases')">💬 Phrases & Fragments</button>
+    <button id="tabPredict" class="tab-btn" onclick="switchMode('predict')">⌨ Next-Word Predictor</button>
+    <button id="tabManage" class="tab-btn" onclick="switchMode('manage')">⚙ Settings & Manager</button>
+  </div>
+
+  <!-- VIEWS CONTAINER -->
+  <div class="view-content">
+
+    <!-- 1. PHRASES & FRAGMENTS MODE -->
+    <div id="viewPhrases" style="display: flex; flex-direction: column; height: 100%;">
+      <div class="category-bar" id="categoryBar">
+        <!-- Rendered dynamically -->
+      </div>
+      <div class="tiles-grid" id="phrasesGrid">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+
+    <!-- 2. PREDICTIVE KEYBOARD MODE -->
+    <div id="viewPredict" class="predictive-container" style="display: none;">
+      <div class="predictions-section">
+        <div class="section-title">✨ Recommended Next Words (Large Target Grid)</div>
+        <div class="prediction-tiles" id="predictionTiles">
+          <!-- Rendered dynamically based on previous words -->
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 4px;">Spelling Fallback / Alphabet</div>
+      <div class="alphabet-section" id="alphabetSection">
+        <!-- Rendered letters -->
+      </div>
+    </div>
+
+    <!-- 3. MANAGEMENT MODE -->
+    <div id="viewManage" class="mgmt-container" style="display: none;">
+      <h2>Add New Vocabulary or Phrase</h2>
+      <div class="mgmt-row">
+        <label for="newCategory">Category</label>
+        <select id="newCategory" class="mgmt-select">
+          <option value="Basic Needs">Basic Needs</option>
+          <option value="Feelings">Feelings</option>
+          <option value="Conversation">Conversation</option>
+          <option value="Sentence Starters">Sentence Starters</option>
+          <option value="Questions">Questions</option>
+        </select>
+      </div>
+
+      <div class="mgmt-row">
+        <label for="newText">Phrase or Fragment Text</label>
+        <input type="text" id="newText" class="mgmt-input" placeholder="e.g., I would like some juice">
+      </div>
+
+      <div class="mgmt-row">
+        <label for="newType">Type</label>
+        <select id="newType" class="mgmt-select">
+          <option value="complete">Complete Phrase (Stand-alone)</option>
+          <option value="fragment">Fragment (Sentence Builder)</option>
+        </select>
+      </div>
+
+      <button class="mgmt-btn" onclick="addNewPhrase()">➕ Save to App Storage</button>
+
+      <hr style="border-color: #334155; margin: 16px 0;">
+
+      <h3>Active Phrases in Storage</h3>
+      <div id="phrasesList" class="phrases-list">
+        <!-- Dynamic list -->
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Initial Seed Data (Saved to localStorage for persistence)
+    const DEFAULT_DATA = {
+      categories: ["All", "Basic Needs", "Feelings", "Sentence Starters", "Conversation", "Questions"],
+      phrases: [
+        { id: 1, text: "Yes", category: "Basic Needs", type: "complete", icon: "✅" },
+        { id: 2, text: "No", category: "Basic Needs", type: "complete", icon: "❌" },
+        { id: 3, text: "Please", category: "Basic Needs", type: "complete", icon: "🙏" },
+        { id: 4, text: "Thank you", category: "Basic Needs", type: "complete", icon: "🙌" },
+        { id: 5, text: "I need help", category: "Basic Needs", type: "complete", icon: "🆘" },
+        { id: 6, text: "Water", category: "Basic Needs", type: "fragment", icon: "💧" },
+        { id: 7, text: "Food", category: "Basic Needs", type: "fragment", icon: "🍲" },
+        { id: 8, text: "Restroom", category: "Basic Needs", type: "complete", icon: "🚻" },
+
+        { id: 9, text: "I want", category: "Sentence Starters", type: "fragment", icon: "👉" },
+        { id: 10, text: "I need", category: "Sentence Starters", type: "fragment", icon: "🙋" },
+        { id: 11, text: "I feel", category: "Sentence Starters", type: "fragment", icon: "💭" },
+        { id: 12, text: "Can you", category: "Sentence Starters", type: "fragment", icon: "🤝" },
+
+        { id: 13, text: "Happy", category: "Feelings", type: "fragment", icon: "😊" },
+        { id: 14, text: "Tired", category: "Feelings", type: "fragment", icon: "😴" },
+        { id: 15, text: "In pain", category: "Feelings", type: "fragment", icon: "🩹" },
+        { id: 16, text: "Cold", category: "Feelings", type: "fragment", icon: "🥶" },
+
+        { id: 17, text: "Hello", category: "Conversation", type: "complete", icon: "👋" },
+        { id: 18, text: "Good morning", category: "Conversation", type: "complete", icon: "🌅" },
+        { id: 19, text: "How are you?", category: "Questions", type: "complete", icon: "❓" },
+        { id: 20, text: "What time is it?", category: "Questions", type: "complete", icon: "⏰" }
+      ],
+      // Markov / Bigram predictive table
+      predictions: {
+        "start": ["I", "Yes", "No", "Please", "Can", "Help"],
+        "i": ["want", "need", "am", "feel", "like", "don't"],
+        "i want": ["water", "food", "to rest", "to go outside", "to speak", "help"],
+        "i need": ["help", "water", "medicine", "my doctor", "a break", "to sleep"],
+        "i feel": ["tired", "happy", "in pain", "cold", "hungry", "better"],
+        "can": ["you", "I", "we", "help", "please", "call"],
+        "can you": ["help me", "come here", "open this", "turn it off", "call family", "repeat that"],
+        "you": ["are", "can", "know", "look", "want", "have"]
+      }
+    };
+
+    let appState = {
+      phrases: JSON.parse(localStorage.getItem("aac_phrases")) || DEFAULT_DATA.phrases,
+      currentCategory: "All",
+      sentenceTokens: [],
+      currentMode: "phrases",
+      voiceSpeed: 0.9
+    };
+
+    // Initialize TTS
+    let synth = window.speechSynthesis;
+
+    function savePhrases() {
+      localStorage.setItem("aac_phrases", JSON.stringify(appState.phrases));
+    }
+
+    function switchMode(mode) {
+      appState.currentMode = mode;
+      document.getElementById("viewPhrases").style.display = mode === 'phrases' ? 'flex' : 'none';
+      document.getElementById("viewPredict").style.display = mode === 'predict' ? 'flex' : 'none';
+      document.getElementById("viewManage").style.display = mode === 'manage' ? 'flex' : 'none';
+
+      document.getElementById("tabPhrases").className = "tab-btn " + (mode === 'phrases' ? 'active' : '');
+      document.getElementById("tabPredict").className = "tab-btn " + (mode === 'predict' ? 'active' : '');
+      document.getElementById("tabManage").className = "tab-btn " + (mode === 'manage' ? 'active' : '');
+
+      if (mode === 'phrases') renderPhrases();
+      if (mode === 'predict') updatePredictions();
+      if (mode === 'manage') renderManageList();
+    }
+
+    function renderCategories() {
+      const container = document.getElementById("categoryBar");
+      container.innerHTML = "";
+      DEFAULT_DATA.categories.forEach(cat => {
+        const btn = document.createElement("button");
+        btn.className = "cat-btn " + (appState.currentCategory === cat ? "active" : "");
+        btn.textContent = cat;
+        btn.onclick = () => {
+          appState.currentCategory = cat;
+          renderCategories();
+          renderPhrases();
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    function renderPhrases() {
+      const grid = document.getElementById("phrasesGrid");
+      grid.innerHTML = "";
+
+      const filtered = appState.phrases.filter(p => 
+        appState.currentCategory === "All" || p.category === appState.currentCategory
+      );
+
+      filtered.forEach(p => {
+        const tile = document.createElement("button");
+        tile.className = `phrase-tile ${p.type}`;
+        tile.innerHTML = `
+          <div class="tile-icon">${p.icon || '💬'}</div>
+          <div>${p.text}</div>
+        `;
+        tile.onclick = () => handlePhraseClick(p);
+        grid.appendChild(tile);
+      });
+    }
+
+    function handlePhraseClick(phrase) {
+      appState.sentenceTokens.push(phrase.text);
+      updateSentenceDisplay();
+
+      // If it's a standalone complete phrase, speak it right away or queue it
+      if (phrase.type === "complete" && appState.sentenceTokens.length === 1) {
+        speakText(phrase.text);
+      }
+    }
+
+    function updateSentenceDisplay() {
+      const display = document.getElementById("sentenceDisplay");
+      if (appState.sentenceTokens.length === 0) {
+        display.textContent = "Tap phrases to start speaking...";
+        display.style.color = "#64748b";
+      } else {
+        display.textContent = appState.sentenceTokens.join(" ");
+        display.style.color = "#38bdf8";
+        display.scrollLeft = display.scrollWidth;
+      }
+      if (appState.currentMode === 'predict') {
+        updatePredictions();
+      }
+    }
+
+    function speakCurrentSentence() {
+      if (appState.sentenceTokens.length === 0) return;
+      const fullText = appState.sentenceTokens.join(" ");
+      speakText(fullText);
+    }
+
+    function speakText(text) {
+      if (!synth) return;
+      synth.cancel(); // cancel pending speech
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.rate = appState.voiceSpeed;
+      utter.pitch = 1.0;
+      synth.speak(utter);
+    }
+
+    function backspaceSentence() {
+      if (appState.sentenceTokens.length > 0) {
+        appState.sentenceTokens.pop();
+        updateSentenceDisplay();
+      }
+    }
+
+    function clearSentence() {
+      appState.sentenceTokens = [];
+      updateSentenceDisplay();
+    }
+
+    // Predictive Keyboard Logic
+    function updatePredictions() {
+      const predContainer = document.getElementById("predictionTiles");
+      predContainer.innerHTML = "";
+
+      const len = appState.sentenceTokens.length;
+      let candidates = [];
+
+      if (len === 0) {
+        candidates = DEFAULT_DATA.predictions["start"];
+      } else {
+        const last1 = appState.sentenceTokens[len - 1].toLowerCase();
+        const last2 = len >= 2 ? (appState.sentenceTokens[len - 2] + " " + last1).toLowerCase() : "";
+
+        if (last2 && DEFAULT_DATA.predictions[last2]) {
+          candidates = DEFAULT_DATA.predictions[last2];
+        } else if (DEFAULT_DATA.predictions[last1]) {
+          candidates = DEFAULT_DATA.predictions[last1];
+        } else {
+          candidates = ["please", "now", "more", "thank you", "help", "good"];
+        }
+      }
+
+      // Fill up to 6 large prediction tiles
+      candidates.slice(0, 6).forEach(word => {
+        const btn = document.createElement("button");
+        btn.className = "predict-tile";
+        btn.textContent = word;
+        btn.onclick = () => {
+          appState.sentenceTokens.push(word);
+          updateSentenceDisplay();
+        };
+        predContainer.appendChild(btn);
+      });
+    }
+
+    function renderAlphabet() {
+      const alphaContainer = document.getElementById("alphabetSection");
+      alphaContainer.innerHTML = "";
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+      alphabet.forEach(letter => {
+        const btn = document.createElement("button");
+        btn.className = "letter-btn";
+        btn.textContent = letter;
+        btn.onclick = () => {
+          // Append or start token
+          if (appState.sentenceTokens.length === 0) {
+            appState.sentenceTokens.push(letter);
+          } else {
+            const lastIdx = appState.sentenceTokens.length - 1;
+            appState.sentenceTokens[lastIdx] += letter;
+          }
+          updateSentenceDisplay();
+        };
+        alphaContainer.appendChild(btn);
+      });
+
+      // Add Space button
+      const spaceBtn = document.createElement("button");
+      spaceBtn.className = "letter-btn space-key";
+      spaceBtn.textContent = "␣ NEXT WORD";
+      spaceBtn.onclick = () => {
+        appState.sentenceTokens.push("");
+        updateSentenceDisplay();
+      };
+      alphaContainer.appendChild(spaceBtn);
+    }
+
+    // Management Mode Logic
+    function addNewPhrase() {
+      const cat = document.getElementById("newCategory").value;
+      const text = document.getElementById("newText").value.trim();
+      const type = document.getElementById("newType").value;
+
+      if (!text) {
+        alert("Please enter a phrase or word.");
+        return;
+      }
+
+      const newId = Date.now();
+      appState.phrases.unshift({
+        id: newId,
+        text: text,
+        category: cat,
+        type: type,
+        icon: type === 'fragment' ? '🧩' : '💬'
+      });
+
+      savePhrases();
+      document.getElementById("newText").value = "";
+      renderManageList();
+      alert("Added successfully!");
+    }
+
+    function deletePhrase(id) {
+      appState.phrases = appState.phrases.filter(p => p.id !== id);
+      savePhrases();
+      renderManageList();
+    }
+
+    function renderManageList() {
+      const list = document.getElementById("phrasesList");
+      list.innerHTML = "";
+
+      appState.phrases.forEach(p => {
+        const item = document.createElement("div");
+        item.className = "phrase-list-item";
+        item.innerHTML = `
+          <div>
+            <strong>${p.text}</strong>
+            <span style="color: #94a3b8; margin-left: 10px;">[${p.category} | ${p.type}]</span>
+          </div>
+          <button class="delete-btn" onclick="deletePhrase(${p.id})">Delete</button>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    // Initial run
+    renderCategories();
+    renderPhrases();
+    renderAlphabet();
+    updatePredictions();
+  </script>
+</body>
+</html>
